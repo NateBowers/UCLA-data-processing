@@ -1,0 +1,36 @@
+{
+    "num": "probe number",
+    "name": "probe name",
+    "A_mat": [
+        [
+            "a_xx",
+            "a_xy",
+            "a_xz"
+        ],
+        [
+            "a_yx",
+            "a_yy",
+            "a_yz"
+        ],
+        [
+            "a_x",
+            "a_y",
+            "a_z"
+        ]
+    ],
+    "Tau_vec": [
+        "tau_x",
+        "tau_y",
+        "tau_z"
+    ],
+    "Tau_s_vec": [
+        "tau_s_x",
+        "tau_s_y",
+        "tau_s_z"
+    ],
+    "N": "amount of coils",
+    "calibration_info": {
+        "calibration_time": "01:22:54 05/22/25 PDT",
+        "notes": "a_ij is the area of the j-th probe axis with respect to the i-th field axis"
+    }
+}
