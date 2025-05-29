@@ -1,12 +1,14 @@
 {
     "num": 0,
-    "name": "1in",
+    "name": "1IN Probe New",
     "type": "1in",
-    "A": 0.00056832,
-    "tau": 1.9987231331590383e-08,
-    "tau_s": 1.9606386297891165e-08,
     "N": 1,
+    "a": 0.00044713491829650575,
+    "tau": 3.286037217037912e-08,
+    "tau_s": 3.117431918006702e-08,
     "calibration_info": {
-        "calibration_time": "01:22:54 05/22/25 PDT"
+        "calibration_time": "15:33:30 05/28/25 PDT",
+        "calibration_notes": "",
+        "calibration_results": "[[Fit Statistics]]\n    # fitting method   = leastsq\n    # function evals   = 305\n    # data points      = 3180\n    # variables        = 3\n    chi-square         = 0.03178406\n    reduced chi-square = 1.0004e-05\n    Akaike info crit   = -36606.6977\n    Bayesian info crit = -36588.5038\n[[Variables]]\n    a:      4.4713e-04 +/- 2.6657e-08 (0.01%) (init = 0.00064516)\n    tau:    3.2860e-08 +/- 1.9903e-10 (0.61%) (init = 3e-08)\n    tau_s:  3.1174e-08 +/- 1.9520e-10 (0.63%) (init = 3e-08)\n[[Correlations]] (unreported correlations are < 0.100)\n    C(tau, tau_s) = +1.0000\n    C(a, tau)     = -0.9200\n    C(a, tau_s)   = -0.9185"
     }
 }
