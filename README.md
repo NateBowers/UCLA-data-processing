@@ -7,6 +7,12 @@ I *highly* recommend using a virtual enviornment for running this code. I like u
 
 # Contents
 
+## HDF5 pre-processing
+
+### Code
+
+The file `h5_processing.py` contains classes for preforming some initial processing on .h5 files collected from 
+
 ## BDot probe calibration
 
 ### Code
@@ -43,3 +49,18 @@ field_vec = probe.reconstruct_field(probe_x, probe_y, probe_z, times, gain)
 
 x_field, y_field, z_field = field_vec
 ```
+
+# To do
+
+- [ ] improve documentation for bdot_code
+- [ ] add auto detection for voltage array sizes for field reconstruction in bdot_code
+- [ ] add shell script to automatically process data
+- [ ] improve documentation for h5_processing
+- [ ] add TS specific aspects to h5_processing
+- [ ] add general graphing capabilities (unsure what they would look like)
+- [ ] add instructions for h5_processing to README
+
+
+# Contact
+Nathaniel Bowers - [bowena02@gettysburg.edu](mailto: bowena02@gettysburg.edu)
+
