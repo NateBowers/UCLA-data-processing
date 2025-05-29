@@ -30,7 +30,7 @@ class PreProcessH5():
         return x, y, z
 
 
-    def _read_raw(self, read_type):
+    def read_raw(self, read_type):
 
         f = self._file
         raw_data = {}
@@ -72,8 +72,8 @@ class PreProcessH5():
         pos_sorted = sorted(pos_and_idx_list, key=lambda x :(np.min(x[1])))
 
         if save_lineout_pos:
-            _x_zero_pos = [r for r in pos_sorted if r[0][0] == 0]
-            self.data['y_lineout'] = sorted(_x_zero_pos, key=lambda x :(x[0][1]))
+            _x_0_pos =[[r[0], i] for i, r in enumerate(pos_sorted) if r[0][0] == 0]
+            self.data['y_lineout'] = sorted(_x_0_pos, key=lambda x :(x[0][1]))
 
         self.data['unique_positions'] = pos_sorted
         return pos_sorted
@@ -84,7 +84,7 @@ class PreProcessH5():
                            **kwargs):
 
         if data_dict is None:
-            data_dict = self._read_raw('all')
+            data_dict = self.read_raw('all')
         elif type(data_dict) is not dict:
             raise TypeError(f'data_dict must be a dict, but a'
                             f' {type(data_dict)} was passed')
@@ -124,8 +124,12 @@ class PreProcessH5():
 
 
     @property
-    def lineout(self):
-        return self.data['y_lineout']
+    def lineout_positions(self):
+        return np.array([r[0] for r in self.data['y_lineout']])
+
+    @property
+    def lineout_idx(self):
+        return ([r[1] for r in self.data['y_lineout']])
     
     @property
     def unique_positions(self):
@@ -158,15 +162,16 @@ class PreProcessBdot(PreProcessH5):
             pass
         if processing == 'default':
             _data = self.avg_over_locations()
-            data = self.align_lecroy(_data)
+            self.data = self.align_lecroy(_data)
+
         if processing == 'load_only':
             if 'read_type' in kwargs.keys():
-                self._read_raw(kwargs['read_type'])
+                self.read_raw(kwargs['read_type'])
             else:
-                self._read_raw('all')
+                self.read_raw('all')
         
 
-    def _read_raw(self, read_type: str='all'):
+    def read_raw(self, read_type: str='all'):
 
         if read_type not in ['all', 'LeCroy', 'MSO', 'Motor', 'Stats']:
             raise ValueError
@@ -176,7 +181,7 @@ class PreProcessBdot(PreProcessH5):
         self._flags.append(read_type)
 
         if read_type in ('all', 'Motor', 'Stats'):
-            raw_data.update(super()._read_raw(read_type))
+            raw_data.update(super().read_raw(read_type))
 
         if read_type in ('all', 'MSO'):
             raw_data['MSO_current'] = np.array(f['MSO24:Ch1:Trace'])
@@ -245,7 +250,7 @@ class PreProcessBdot(PreProcessH5):
         print(f'>{'-'*78}<')
         print('Motor statistics:')
         print(f'  -> Total number of positions: {self._total_pos}')
-        if 'avg' in self._flags:
+        if 'averaged' in self._flags:
             print(f'  -> Number of unique positions: {len(d['motor_x'])}')
             if verbose:
                 print('  -> Position list:')
@@ -275,6 +280,19 @@ class PreProcessBdot(PreProcessH5):
         z = self.data['LeCroy_z']
         t = self.data['LeCroy_time']
         return x, y, z, t
+    
+    @property
+    def LeCroy_lineout(self):
+        """
+        Returns LeCroy x, y, z, and time ordered along the lineout
+        axis from low y to high y
+        """
+        idx = [i for i in self.lineout_idx]
+        x = self.data['LeCroy_x'][idx]
+        y = self.data['LeCroy_y'][idx]
+        z = self.data['LeCroy_z'][idx]
+        t = self.data['LeCroy_time'][idx]
+        return x, y, z, t
 
     @property
     def MSO(self):
@@ -296,5 +314,8 @@ if __name__ == '__main__':
     data = PreProcessBdot(file)
 
     x, y, z, t = data.LeCroy
+
+
+
     print(x.shape)
     print(t.shape)
