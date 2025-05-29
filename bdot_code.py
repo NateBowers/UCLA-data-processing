@@ -18,8 +18,8 @@ mu_0 = 4 * np.pi * 10e-7
 class _Probe():
     """Container class for one, three axis probes. Should not be called"""
     def __init__(self, 
-                 number: int | None = None, 
-                 name: str | None = None):
+                 number: int, 
+                 name: str):
         """
         Initialize name, number, and a few flags. Either a name or number
         must be passed
@@ -35,13 +35,6 @@ class _Probe():
             TypeError: Checks the probe name is a string
             ValueError: Checks that either probe name or number is passed
         """
-        
-        if number is not None and type(number) is not int:
-            raise TypeError('Probe number must be an integer')
-        if type(name) is not str and name is not None:
-            raise TypeError('Probe name must be a string')
-        if number == -1 and name == 'unnamed':
-            raise ValueError('Probe must have a name or number')
         self.name = name
         self.num = number
 
@@ -521,8 +514,8 @@ class OneAxisProbe(_Probe):
 
 class ThreeAxisProbe(_Probe):
     def __init__(self, 
-                 number: int | None=None,
-                 name: str | None=None,
+                 number: int,
+                 name: str,
                  ):
         super().__init__(number, name)
 
@@ -808,7 +801,7 @@ class ThreeAxisProbe(_Probe):
                     'calibration_results_j_is_2': self.j2_report,
                 }
             }
-            save_path = f'bdot_data/params/probe_{self.num}.json'
+            save_path = f'bdot_data/params/probe_{self.num}_{self.name}.json'
 
             if not overwrite and os.path.exists(save_path):
                 raise AttributeError(f'A file already exists at {save_path} '
@@ -825,9 +818,9 @@ class ThreeAxisProbe(_Probe):
             print(f'{'-'*80}{'\n'}REPORT FOR PROBE Z AXIS (j=2)')
             print(lmfit.fit_report(result_j_is_2))
             print(f'{'-'*80} Full probe parameters:')
-            print(f'A={self.A}')
-            print(f'Tau={self.Tau}')
-            print(f'Tau_s={self.Tau_s}')
+            print(f'A={self.a}')
+            print(f'Tau={self.tau}')
+            print(f'Tau_s={self.tau_s}')
 
         self.calibrated = True
         
@@ -871,7 +864,7 @@ class ThreeAxisProbe(_Probe):
 
     def gen_probe_report(self):
         
-        with PdfPages(f'bdot_data/reports/probe_{self.num}_report.pdf') as pdf:
+        with PdfPages(f'bdot_data/reports/probe_{self.num}_{self.name}_report.pdf') as pdf:
             page1 = plt.figure(figsize=(8.5,11))
             header, plot_fig, footer = page1.subfigures(nrows=3, 
                                                ncols=1, 
@@ -1080,11 +1073,20 @@ class ThreeAxisProbe(_Probe):
 
 if __name__ == '__main__':
 
-    probe = OneAxisProbe(name = '1IN Probe New', number = 0)
-    probe.load_data('bdot_data/1in_probe-05-28')
-    probe.clip(10)
+    probe_a = ThreeAxisProbe(2, 'Copper-05-28')
+    probe_a.load_data('bdot_data/probe-2-05-28_with_Cu-data')
+    probe_b = ThreeAxisProbe(2, 'Shaved-05-28')
+    probe_b.load_data('bdot_data/probe-2-05-28-shaved-data')
+    probe_c = ThreeAxisProbe(2, '05-23')
+    probe_c.load_data('bdot_data/probe-2-calib-05-23-data')
+    probe_d = ThreeAxisProbe(2, '05-21')
+    probe_d.load_data('bdot_data/probe_2_calibration_data-05-21')
+    probe_e = ThreeAxisProbe(2, '05-26')
+    probe_e.load_data('bdot_data/probe_2_calibration_05_26-data')
+
+    probe = probe_e
+
+    probe.clip(20)
     probe.graph_raw_data(show=True)
-
-    probe.calibrate(save=True, overwrite=True)
-    # probe.gen_probe_report()
-
+    probe.calibrate(verbose=True, overwrite=True)
+    probe.gen_probe_report()
