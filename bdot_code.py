@@ -129,7 +129,7 @@ class OneAxisProbe(Probe):
             ax1.set_ylabel('Linear units', color='red')
             ax1.plot(self.freq*1e-6, self.re, 
                      label='Real part of V_meas/V_ref', color='red')
-            axs.set_xlabel('Angular frequency (Mrad/s)')
+            ax1.set_xlabel('Angular frequency (Mrad/s)')
             ax2 = ax1.twinx()
             ax2.set_ylabel('Linear units', color='blue')
             ax2.plot(self.freq*1e-6, self.im, 
@@ -831,14 +831,13 @@ class ThreeAxisProbe(Probe):
 
 if __name__ == '__main__':
 
-    probe = ThreeAxisProbe(name = 'Probe 2', number = 2)
-    probe.load_data('bdot_data/probe_2_calibration_05_26')
-
-    probe.clip(50)
-
+    probe = OneAxisProbe(name = '1IN Probe New', number = 0)
+    probe.load_data('bdot_data/1in_probe-05-28')
+    probe.clip(10)
+    probe.graph_raw_data(show=True)
 
     probe.calibrate(save=True, overwrite=True)
-    probe.gen_probe_report()
+    # probe.gen_probe_report()
 
 
 
