@@ -406,7 +406,8 @@ class OneAxisProbe(_Probe):
                     voltages: np.array, 
                     times: np.array, 
                     g: float, 
-                    b_0: float=0) -> np.array:
+                    b_0: float=0,
+                    correct_drift: bool = False) -> np.array:
         """Reconstructs magnetic field from voltage reading by numerically
         integrating equation (10) in E. Everson (2009).
 
@@ -436,8 +437,13 @@ class OneAxisProbe(_Probe):
             raise Exception(f'voltages and times must have the same shape,\
                              but voltages is {voltages.shape} and times is \
                              {times.shape}.')
+        
+        if correct_drift:
+            num_timesteps = times.shape[0]
+            voltages -= np.average(voltages[:int(num_timesteps*0.04)])
 
-        field = np.empty(len(voltages))
+
+        field = np.zeros_like(voltages)
         field[0] = b_0
 
         const1 = 1 / (self.a * self.N * g)
@@ -453,7 +459,8 @@ class OneAxisProbe(_Probe):
                           volts_arr: np.array, 
                           times_arr: np.array, 
                           g: float, 
-                          b_0: float=0) -> np.array:
+                          b_0: float=0,
+                          **kwargs) -> np.array:
         """Applies reconstruct() to each row in an m x n array of voltages,
            where the zeroth axis represents different shots and the first
            axis represents the measurements along time of an individual
@@ -485,7 +492,7 @@ class OneAxisProbe(_Probe):
             b_0 = np.full(num_rows, b_0)
         field_arr = []
         for i, row in enumerate(volts_arr):
-            field_row = self.reconstruct(row, times_arr[i], g, b_0[i])
+            field_row = self.reconstruct(row, times_arr[i], g, b_0[i], kwargs)
             field_arr.append(field_row)
         return np.array(field_arr)
     
@@ -939,7 +946,7 @@ class ThreeAxisProbe(_Probe):
                          times: np.array,
                          g: float,
                          correct_drift: bool = False,
-                         b_0: np.array | None = None,
+                         b_0: np.array = None,
                     ) -> tuple:
         """Reconstruct three dimensional magnetic field from probe
            measurements for an individual run. Takes into accont the off-axis 
@@ -998,8 +1005,7 @@ class ThreeAxisProbe(_Probe):
 
         for i in range(len(v_x_int)):
             field[i+1] = A_inv @ (v_int_vec[:,i] 
-                                  + np.multiply(ts, (v_vec[:,i] - v_vec[:,0]))
-                             )   
+                                + np.multiply(ts, (v_vec[:,i] - v_vec[:,0])))   
 
         return field.T[0], field.T[1], field.T[2]
     
