@@ -131,6 +131,8 @@ class PreProcessBdot(PreProcessH5):
         if processing == 'default':
             _data = self.avg_over_locations()
             data = self.align_lecroy(_data)
+        if processing == 'load_only':
+            self.read_raw('all')
         
 
     def read_raw(self, readout_type: str='all'):
