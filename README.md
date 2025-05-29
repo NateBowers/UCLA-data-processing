@@ -5,22 +5,45 @@ This code was written and tested in python 3.13.1. See requirements.txt for the 
 
 I *highly* recommend using a virtual enviornment for running this code. I like using [virtualenvwrapper](https://virtualenvwrapper.readthedocs.io/en/latest/) and [pyenv](https://github.com/pyenv/pyenv), but [venv](https://docs.python.org/3/library/venv.html) is easier to setup and use.
 
-Contents:
-1. Capabilities
-   1.1 HDF5 Pre-processing
-   1.2 BDOT probe calibration
-2. To-do
-3. Contact
 
-# 1. Capabilities
+# Capabilities
 
-## 1.1 HDF5 pre-processing
+## HDF5 pre-processing
 
 ### Code
 
-The file `h5_processing.py` contains classes for preforming some initial processing on .h5 files collected from 
+The file `h5_processing.py` contains classes for preforming some initial processing on .h5 files collected from the laser control system. The PreProcessing classes automatically average data over positions and align LeCroy readouts in time. Pass `processing='load_only` to just load the raw data into the object `processing=None` to simply initialize it.
 
-## 1.2 BDot probe calibration
+### Sample use
+
+Call `PreProcessBdot` either on an already loaded h5py instance or the path to an .h5 file. It will automatically collect information on LeCroy, MSO, motor positions, laser energy, and chamber pressure. It will then automatically average over positions and align LeCroy in time. Calling `summary()` will print out some sample information on the run and calling `data` returns a dictionary with the pre-processed data. 
+
+```
+file = h5py.File('path/to_file.h5)
+PreProcData = PreProcessBdot(file)
+PreProcData.summary()
+
+bdot_x = PreProcData.data['LeCroy_x']
+bdot_time = PreProcData.data['LeCroy_t]
+```
+
+output
+```
+================================================================================
+Summary statistics for to_file
+>------------------------------------------------------------------------------<
+Motor statistics:
+  -> Total number of positions: 57
+  -> Number of unique positions: 18
+>------------------------------------------------------------------------------<
+Other statistics:
+  -> Laser energy: 9.368±0.079 J
+  -> Chamber pressure: 96.839±1.203 mTorr
+================================================================================
+```
+
+
+## BDot probe calibration
 
 ### Code
 
@@ -57,7 +80,7 @@ field_vec = probe.reconstruct_field(probe_x, probe_y, probe_z, times, gain)
 x_field, y_field, z_field = field_vec
 ```
 
-# 2. To do
+# To do
 
 - [ ] improve documentation for bdot_code
 - [ ] add auto detection for voltage array sizes for field reconstruction in bdot_code
@@ -68,6 +91,6 @@ x_field, y_field, z_field = field_vec
 - [ ] add instructions for h5_processing to README
 
 
-# 3. Contact
+# Contact
 Nathaniel Bowers - bowena02@gettysburg.edu
 
