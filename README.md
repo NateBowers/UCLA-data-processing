@@ -5,15 +5,22 @@ This code was written and tested in python 3.13.1. See requirements.txt for the 
 
 I *highly* recommend using a virtual enviornment for running this code. I like using [virtualenvwrapper](https://virtualenvwrapper.readthedocs.io/en/latest/) and [pyenv](https://github.com/pyenv/pyenv), but [venv](https://docs.python.org/3/library/venv.html) is easier to setup and use.
 
-# Contents
+Contents:
+1. Capabilities
+    1.1 HDF5 Pre-processing
+    1.2 BDOT probe calibration
+2. To-do
+3. Contact
 
-## HDF5 pre-processing
+# 1. Capabilities
+
+## 1.1 HDF5 pre-processing
 
 ### Code
 
 The file `h5_processing.py` contains classes for preforming some initial processing on .h5 files collected from 
 
-## BDot probe calibration
+## 1.2 BDot probe calibration
 
 ### Code
 
@@ -50,7 +57,7 @@ field_vec = probe.reconstruct_field(probe_x, probe_y, probe_z, times, gain)
 x_field, y_field, z_field = field_vec
 ```
 
-# To do
+# 2. To do
 
 - [ ] improve documentation for bdot_code
 - [ ] add auto detection for voltage array sizes for field reconstruction in bdot_code
@@ -61,6 +68,6 @@ x_field, y_field, z_field = field_vec
 - [ ] add instructions for h5_processing to README
 
 
-# Contact
-Nathaniel Bowers - [bowena02@gettysburg.edu](mailto: bowena02@gettysburg.edu)
+# 3. Contact
+Nathaniel Bowers - bowena02@gettysburg.edu
 
