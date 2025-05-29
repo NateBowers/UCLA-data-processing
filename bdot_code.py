@@ -500,6 +500,22 @@ class OneAxisProbe(_Probe):
 
 
 
+
+
+
+
+
+
+##################
+#  3 Axis Probe  #
+##################
+
+
+
+
+
+
+
 ### Note: j indexes over P (which is probe axis), i indexes over B 
 # (which is field axis)
 
@@ -507,9 +523,8 @@ class ThreeAxisProbe(_Probe):
     def __init__(self, 
                  number: int | None=None,
                  name: str | None=None,
-                 *args, 
-                 **kwargs):
-        super().__init__(*args, **kwargs)
+                 ):
+        super().__init__(number, name)
 
     
     def load_data(self, folder: str):
@@ -592,8 +607,6 @@ class ThreeAxisProbe(_Probe):
         for i, subfig in enumerate(subfigs):
             ax_re = subfig.add_subplot()
             ax_re.plot(self.f*1e-6, y_re[i], label='Real part', color='red')
-            ax_re.plot(self.f*1e-6, np.sqrt(y_re[i]**2 + y_im[i]**2), 
-                       label='Magnitude', linestyle='--', color='green')
             ax_re.set_title(titles[i])
             ax_re.set_ylim(-re_bound, re_bound)
             ax_re.set_xlabel('Angular frequency (Mrad/s)')
@@ -862,7 +875,7 @@ class ThreeAxisProbe(_Probe):
             page1 = plt.figure(figsize=(8.5,11))
             header, plot_fig, footer = page1.subfigures(nrows=3, 
                                                ncols=1, 
-                                               height_ratios=[3, 7, 1])
+                                               height_ratios=[2, 8, 1])
             header.text(0.5, 0.5, f'Calibration data for probe number '
                         f'{self.num} ({self.name})', wrap=True, ha='center', 
                         fontvariant='small-caps', fontsize='x-large')
@@ -883,12 +896,13 @@ class ThreeAxisProbe(_Probe):
 
             for i in range(3):
                 axis = ['x', 'y', 'z']
+                reports = [self.j0_report, self.j1_report, self.j1_report]
                 page_i = plt.figure(figsize=(8.5, 11))
                 header, plot_fig = page_i.subfigures(nrows=2, ncols=1, 
                                                 height_ratios=[4, 7])
                 header.text(0.5, 0.82, f'Fit results for probe on {axis[i]} '
                             f'axis', ha='center', fontsize='large')
-                header.text(0.5,0, self.j0_report, ha='center', 
+                header.text(0.5,0, reports[i], ha='center', 
                             ma='left', fontsize='small')
                 
                 true = data_true[i]
