@@ -7,8 +7,8 @@ I *highly* recommend using a virtual enviornment for running this code. I like u
 
 Contents:
 1. Capabilities
-    1.1 HDF5 Pre-processing
-    1.2 BDOT probe calibration
+   1.1 HDF5 Pre-processing
+   1.2 BDOT probe calibration
 2. To-do
 3. Contact
 
