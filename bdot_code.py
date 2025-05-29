@@ -5,20 +5,36 @@ from matplotlib.backends.backend_pdf import PdfPages
 import json
 import lmfit
 import time
-import scipy
+from scipy.integrate import cumulative_trapezoid
 import os
 
 
+# CONSTANTS
 mu_0 = 4 * np.pi * 10e-7
 
 
 
 
-class Probe():
-    """Container class for one and three axis probes. Should not be called"""
+class _Probe():
+    """Container class for one, three axis probes. Should not be called"""
     def __init__(self, 
-                 number: int=None, 
-                 name: str=None):
+                 number: int | None = None, 
+                 name: str | None = None):
+        """
+        Initialize name, number, and a few flags. Either a name or number
+        must be passed
+
+        Args:
+            number (int | None, optional): The number of the probe. 
+                Defaults to None.
+            name (str | None, optional): The name of the probe. 
+                Defaults to None.
+
+        Raises:
+            TypeError: Checks the probe number is an int
+            TypeError: Checks the probe name is a string
+            ValueError: Checks that either probe name or number is passed
+        """
         
         if number is not None and type(number) is not int:
             raise TypeError('Probe number must be an integer')
@@ -32,8 +48,17 @@ class Probe():
         self.calibrated = False
         self.loaded_params = False
         
-    def _load(self, path: str) -> tuple:
-        """ Load data and convert to omega, Re, Im"""
+    def _load(self, 
+              path: str
+            ) -> tuple:
+        """Load data
+
+        Args:
+            path (str): _description_
+
+        Returns:
+            tuple: (frequency (Ang), real component, imaginary component)
+        """
         freq, mag, phase = np.genfromtxt(path, skip_header=15).T
         freq = freq * 2 * np.pi
         phase = phase * np.pi / 180
@@ -41,23 +66,62 @@ class Probe():
         im_PjBi = mag * np.sin(phase)
         return freq, re_PjBi, im_PjBi
 
-    def _re_curve_meinecke(self, w, a, tau, tau_s) -> float:
-        """ Real component of Vmeas/Vref """
-        y = self.factor * ((a * (w ** 2) * (tau_s - tau)) /
+    def _re_curve_meinecke(self, 
+                           w: float, 
+                           a: float, 
+                           tau: float, 
+                           tau_s: float
+                        ) -> float:
+        """ 
+        Real component of Vmeas/Vref as defined in equation (94) of Prof
+        Meinecke's thesis (p. 100). 
+        
+        Args:
+            w (float): angular frequency
+            a (float): cross sectional area of probe tip
+            tau (float): time delay from the wires
+            tau_s (float): relaxation 
+        
+        Returns: 
+            y (float): Real component of Vmeas/Vref
+        """
+        return self.factor * ((a * (w ** 2) * (tau_s - tau)) /
                             (1 + (tau_s * w) ** 2))
-        return y
 
-    def _im_curve_meinecke(self, w, a, tau, tau_s) -> float:
-        """ Imaginary component of Vmeas/Vref"""
-        y =  self.factor * ((a * tau * tau_s * (w**3) + a * w) / 
+    def _im_curve_meinecke(self,
+                           w: float,
+                           a: float,
+                           tau: float,
+                           tau_s: float
+                        ) -> float:
+        """ 
+        Imaginary component of Vmeas/Vref as defined in equation (94) of Prof
+        Meinecke's thesis (p. 100). 
+        
+        Args:
+            w (float): angular frequency
+            a (float): cross sectional area of probe tip
+            tau (float): time delay from the wires
+            tau_s (float): relaxation 
+        
+        Returns: 
+            y (float): Real component of Vmeas/Vref
+        """
+        return self.factor * ((a * tau * tau_s * (w**3) + a * w) / 
                             (1 + (tau_s * w) ** 2))
-        return y
     
 
 
 
 
-class OneAxisProbe(Probe):
+
+
+
+class OneAxisProbe(_Probe):
+    """Contains functionality for probe calibration, report generation,
+    and magnetic field reconstruction. See the docstrings for the 
+    methods below for details on all the features implimented.
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -101,7 +165,8 @@ class OneAxisProbe(Probe):
 
     def graph_raw_data(self, 
                        axs=False, 
-                       show=False) -> matplotlib.axes.Axes:
+                       show=False
+                    ) -> matplotlib.axes.Axes:
         """Graph the the real and imaginary parts of the calibration data on
            the same plot but with seperate y axes to properly scale
 
@@ -143,7 +208,8 @@ class OneAxisProbe(Probe):
         """Load calibrated parameters into the probe
 
         Args:
-            path (str): Path to the json file contianing the probe parameters
+            path (str): Path to the json file contianing the probe 
+	    parameters
 
         Raises:
             ValueError: Ensures that only 1in probes can be loaded into the 
@@ -152,7 +218,8 @@ class OneAxisProbe(Probe):
         with open (path) as f:
             data = json.load(f)
             if data['type'] != '1in':
-                raise ValueError('Can only load 1in probes into OneAxisProbe')
+                raise ValueError('Can only load 1in probes into ' \
+                                    'OneAxisProbe')
             self.a = data['a']
             self.tau = data['tau']
             self.tau_s = data['tau_s']
@@ -163,28 +230,69 @@ class OneAxisProbe(Probe):
                 self.name = data['name']
         self.loaded_params = True
 
-    def _objective(self, 
-                    params, 
-                    freq, 
-                    re_true, 
-                    im_true) -> np.array:
+    def _objective(self,
+                    params: lmfit.Parameters,
+                    freq: np.array,
+                    re_true: np.array,
+                    im_true: np.array
+                ) -> np.array:
+        
+        """
+        Objective function to be minimized when fitting the theoretical
+        curves to calibration data. The quantity minimized is a list of 
+        the signed differences between the real and predicted real and
+        imaginary components of the probe voltage responce.
+
+        Arguments:
+            params (lmfit.Parameters): param dict containing a, tau, and tau_s
+            freq (np.array): frequency array in rad/s
+            re_true (np.array): real component of measured voltage responce in
+                unitless
+            im_true (np.array): imaginary component of measured voltage
+                responce in unitless
+
+        Returns:
+            np.array: array of signed differences
+        """
         
         a = params['a']
         tau = params['tau']
         tau_s = params['tau_s']
 
-        re_predict = np.array(super()._re_curve_meinecke(freq, a, tau, tau_s))
-        im_predict = np.array(super()._im_curve_meinecke(freq, a, tau, tau_s))
+        re_pred = np.array(super()._re_curve_meinecke(freq, a, tau, tau_s))
+        im_pred = np.array(super()._im_curve_meinecke(freq, a, tau, tau_s))
 
-        resid_re = re_true - re_predict
-        resid_im = im_true - im_predict
+        resid_re = re_true - re_pred
+        resid_im = im_true - im_pred
         return np.concat((resid_re, resid_im))
 
     def calibrate(self, 
-                  save=True, 
-                  verbose=True, 
-                  overwrite=False, 
-                  notes='') -> tuple:
+                  save: bool=True, 
+                  verbose: bool=True, 
+                  overwrite: bool=False, 
+                  notes: str=''
+                ) -> tuple:
+        
+        """Calibration routine for bdot probe. See _objective() for details
+        on the minimized cost function.
+
+        Args:
+            saves (bool): Whether to save the calibration results. If true, 
+                results are saved to 'bdot_data/params/probe_{self.num}.json'
+                Defaults to True
+            verbose (bool): Whether to print calibration results to the
+                command line. Defaults to True
+            overwrite (bool): If a probe with the same number has previously
+                been calibrated, whether to overwrite existing calibration 
+                results when saved.
+
+        Raises:
+            AttributeError: raised if results are attempted to be overwriten
+                without overwrite=True
+
+        Returns:
+            tuple: calibrated values for (a, tau, tau_s).
+        """
 
 
         self.calibrated = True
@@ -277,7 +385,8 @@ class OneAxisProbe(Probe):
                          self._im_curve_meinecke(self.freq, self.a, 
                                                  self.tau, self.tau_s)]
             for i, ax in enumerate(axs):
-                ax.set_title(f'Data v. Predicted Fit for {title[i]} Component')
+                ax.set_title(f'Data v. Predicted Fit for {title[i]}'
+			'f Component')
                 ax.set_xlabel('Angular frequency (Mrad/s)')
                 ax.set_ylabel('Linear unitless')
                 ax.plot(self.freq*1e-6, data_true[i], color='blue', 
@@ -296,10 +405,27 @@ class OneAxisProbe(Probe):
     def reconstruct(self, 
                     voltages: np.array, 
                     times: np.array, 
-                    g, 
+                    g: float, 
                     b_0: float=0) -> np.array:
-        """Integrate equation (10) in Everson (2009)"""
+        """Reconstructs magnetic field from voltage reading by numerically
+        integrating equation (10) in E. Everson (2009).
 
+
+        Args:
+            voltages (np.array): measured probe voltages
+            times (np.array): time for each voltage measurement
+            g (float): gain on scope
+            b_0 (float, optional): initial magnetic field. Defaults to 0.
+
+        Raises:
+            Exception: Raised if the probe is not calibrated or has not had
+                parameters loaded
+            Exception: Ensures voltages is a 1 dimensional array
+            Exception: Raised if voltages and times have different shapes
+
+        Returns:
+            np.array: reconstructed field.
+        """
         if not (self.loaded_params or self.calibrated):
             raise Exception('Probe must be calibrated or have parameters' \
             ' loaded before reconstructing.')
@@ -317,21 +443,42 @@ class OneAxisProbe(Probe):
         const1 = 1 / (self.a * self.N * g)
         const2 = field[0] - self.tau_s * const1 * voltages[0]
 
-        voltages_integrated = scipy.integrate.cumulative_trapezoid(voltages, 
-                                                                   x=times)
+        voltages_integrated = cumulative_trapezoid(voltages, x=times)
         for i in range(len(voltages_integrated)):
             field[i+1] = const1 * (voltages_integrated[i] + 
                                    self.tau_s*voltages[i]) + const2
         return field
     
     def reconstruct_array(self, 
-                          volts_arr, 
-                          times_arr, 
-                          g, 
-                          b_0=0) -> np.array:
+                          volts_arr: np.array, 
+                          times_arr: np.array, 
+                          g: float, 
+                          b_0: float=0) -> np.array:
+        """Applies reconstruct() to each row in an m x n array of voltages,
+           where the zeroth axis represents different shots and the first
+           axis represents the measurements along time of an individual
+           shot.
+
+        Args:
+            volts_arr (np.array): voltage values, where axis 1 is the axis to
+                 be integrated along
+            times_arr (np.array): time values, where axis 1 is the axis to be 
+                integrated along
+            g (float): scope gain
+            b_0 (float, optional): initial field. Defaults to 0.
+
+        Raises:
+            ValueError: _description_
+
+        Returns:
+            np.array: m x n array where each row is the reconstructed field
+            corresponding to that row in the input voltages array.
+        """
+
         
         if volts_arr.shape != times_arr.shape:
-            raise ValueError('volts_arr and times_arr must has the same shape')
+            raise ValueError('volts_arr and times_arr must has the \
+	    	same shape')
         
         num_rows = volts_arr.shape[0]
         if type(b_0) is int:
@@ -349,8 +496,12 @@ class OneAxisProbe(Probe):
 ### Note: j indexes over P (which is probe axis), i indexes over B 
 # (which is field axis)
 
-class ThreeAxisProbe(Probe):
-    def __init__(self, *args, **kwargs):
+class ThreeAxisProbe(_Probe):
+    def __init__(self, 
+                 number: int | None=None,
+                 name: str | None=None,
+                 *args, 
+                 **kwargs):
         super().__init__(*args, **kwargs)
 
     
@@ -434,7 +585,8 @@ class ThreeAxisProbe(Probe):
         for i, subfig in enumerate(subfigs):
             ax_re = subfig.add_subplot()
             ax_re.plot(self.f*1e-6, y_re[i], label='Real part', color='red')
-            ax_re.plot(self.f*1e-6, np.sqrt(y_re[i]**2 + y_im[i]**2), label='Magnitude', linestyle='--', color='green')
+            ax_re.plot(self.f*1e-6, np.sqrt(y_re[i]**2 + y_im[i]**2), 
+                       label='Magnitude', linestyle='--', color='green')
             ax_re.set_title(titles[i])
             ax_re.set_ylim(-re_bound, re_bound)
             ax_re.set_xlabel('Angular frequency (Mrad/s)')
@@ -639,7 +791,8 @@ class ThreeAxisProbe(Probe):
             save_path = f'bdot_data/params/probe_{self.num}.json'
 
             if not overwrite and os.path.exists(save_path):
-                raise AttributeError(f'A file already exists at {save_path} and overwrite = false')
+                raise AttributeError(f'A file already exists at {save_path} '
+                                     f'and overwrite = false')
             else:
                 with open(save_path, 'w') as save_file:
                     json.dump(save_data, save_file, indent=4)
@@ -663,7 +816,8 @@ class ThreeAxisProbe(Probe):
     def graph(self, raw=False, results=False, save=True):
 
         if self.calibrated and not results:
-            raise ValueError('Graphs can only be generated for calibrated probes')
+            raise ValueError('Graphs can only be generated '
+                'for calibrated probes')
         
 
         if raw:
@@ -702,8 +856,8 @@ class ThreeAxisProbe(Probe):
             header, plot_fig, footer = page1.subfigures(nrows=3, 
                                                ncols=1, 
                                                height_ratios=[3, 7, 1])
-            header.text(0.5, 0.5, f'Calibration data for probe number {self.num
-                        } ({self.name})', wrap=True, ha='center', 
+            header.text(0.5, 0.5, f'Calibration data for probe number '
+                        f'{self.num} ({self.name})', wrap=True, ha='center', 
                         fontvariant='small-caps', fontsize='x-large')
             header.text(0.5, 0.4, f'Calibrated on {time.strftime('%X %x %Z', 
                         time.localtime())}', ha='center')
@@ -712,8 +866,6 @@ class ThreeAxisProbe(Probe):
             footer.text(0.5,0.4, s='1', ha='center')
             pdf.savefig()
             plt.close()
-
-
 
             data_true = [[self.r_00, self.i_00],
                          [self.r_11, self.i_11],
@@ -727,8 +879,8 @@ class ThreeAxisProbe(Probe):
                 page_i = plt.figure(figsize=(8.5, 11))
                 header, plot_fig = page_i.subfigures(nrows=2, ncols=1, 
                                                 height_ratios=[4, 7])
-                header.text(0.5, 0.82, f'Fit results for probe on {axis[i]} axis', ha='center', 
-                            fontsize='large')
+                header.text(0.5, 0.82, f'Fit results for probe on {axis[i]} '
+                            f'axis', ha='center', fontsize='large')
                 header.text(0.5,0, self.j0_report, ha='center', 
                             ma='left', fontsize='small')
                 
@@ -736,13 +888,12 @@ class ThreeAxisProbe(Probe):
                 pred = data_pred[i]
                 
                 
-
-
                 axs = plot_fig.subplots(2, 1, sharex=True)            
                 title = ['Re', 'Im']
                 
                 for j, ax in enumerate(axs):
-                    ax.set_title(f'Data v. Predicted Fit for {title[j]} Component of on axis for {axis[i]} probe')
+                    ax.set_title(f'Data v. Predicted Fit for {title[j]} '
+                                 f'Component of on axis for {axis[i]} probe')
                     ax.set_xlabel('Angular frequency (Mrad/s)')
                     ax.set_ylabel('Linear unitless')
                     ax.plot(self.f*1e-6, true[j], color='blue', 
@@ -762,10 +913,6 @@ class ThreeAxisProbe(Probe):
                 plt.close()
 
 
-
-
-    
-
     def load_params(self,
                     path,
                     change_num=False):
@@ -773,7 +920,8 @@ class ThreeAxisProbe(Probe):
             data = json.load(file)
         
         if self.num != data['num'] and not change_num:
-            raise ValueError(f'Attempting to load data from probe {data['num']} into probe {self.num}')
+            raise ValueError(f'Attempting to load data from probe'
+                             f' {data['num']} into probe {self.num}')
         
         self.params_loaded = True
     
@@ -785,17 +933,47 @@ class ThreeAxisProbe(Probe):
     
 
     def reconstruct_field(self, 
-                         v_x,
-                         v_y,
-                         v_z, 
-                         times,
-                         g,
-                         correct_drift = False) -> np.array:
-        """Returns np.array((x_field, y_field, z_field))"""
+                         v_x: np.array,
+                         v_y: np.array,
+                         v_z: np.array, 
+                         times: np.array,
+                         g: float,
+                         correct_drift: bool = False,
+                         b_0: np.array | None = None,
+                    ) -> tuple:
+        """Reconstruct three dimensional magnetic field from probe
+           measurements for an individual run. Takes into accont the off-axis 
+           cross sectional areas. 
+
+        Args:
+            v_x (np.array): voltage readings from the x-axis
+            v_y (np.array): voltage readings from the y-axis
+            v_z (np.array): voltage readings from the z-axis
+            times (np.array): time values for each individual voltage
+                measurement
+            g (float): scope gain
+            correct_drift (bool, optional): Whether or not to add an offset to
+                the x, y, and z voltages equal to the average of the first
+                0.04 elements. Defaults to False.
+            b_0 (np.array | None, optional): 3 element array containing
+                initial field values for x, y, and z axes. Defaults to None.
+
+        Raises:
+            ValueError: Raised if the voltages and times are not of the
+                same length
+
+        Returns:
+            tuple: three np.arrays corresponding to the reconstructed magnetic
+                field for the x, y, and z axes, respectively.            
+        """
         if not self.a:
-            raise ValueError('Probe must be calibrated before reconstructing fields')
-        if len(v_x) != len(v_y) != len(v_z):
-            raise IndexError('x, y, z traces must have the same length')
+            raise ValueError('Probe must be calibrated before \
+	    reconstructing fields')
+        if len(v_x) != len(v_y) != len(v_z) != len(times):
+            raise IndexError(f'x, y, z traces and times must have the same'
+                             f'length, but arrays of length {len(v_x)}, '
+                             f'{len(v_y)}, {len(v_z)}, and {len(times)} were '
+                             f'passed.')
         
         if correct_drift:
             num_timesteps = times.shape[0]
@@ -804,25 +982,76 @@ class ThreeAxisProbe(Probe):
             v_z -= np.average(v_z[:int(num_timesteps*0.04)])
 
         field = np.zeros((len(times),3))
+        if b_0:
+            field[0] = b_0
 
-        v_x_int = scipy.integrate.cumulative_trapezoid(v_x, times)
-        v_y_int = scipy.integrate.cumulative_trapezoid(v_y, times)
-        v_z_int = scipy.integrate.cumulative_trapezoid(v_z, times)
+        v_x_int = cumulative_trapezoid(v_x, times)
+        v_y_int = cumulative_trapezoid(v_y, times)
+        v_z_int = cumulative_trapezoid(v_z, times)
 
         v_vec = np.vstack((v_x, v_y, v_z))
         v_int_vec = np.vstack((v_x_int, v_y_int, v_z_int))
 
-        A_inv = np.linalg.inv(self.a)
+        A_inv = np.linalg.inv(self.a) / (self.N * g)
 
+        ts = self.tau_s
 
         for i in range(len(v_x_int)):
-            field[i+1] = A_inv @ (v_int_vec[:,i] + np.multiply(self.tau_s, (v_vec[:,i] - v_vec[:,0]))) / (self.N * g)
+            field[i+1] = A_inv @ (v_int_vec[:,i] 
+                                  + np.multiply(ts, (v_vec[:,i] - v_vec[:,0]))
+                             )   
 
-        return field.T
+        return field.T[0], field.T[1], field.T[2]
+    
+
+    def reconstruct_array(self,
+                          v_x_arr: np.array,
+                          v_y_arr: np.array,
+                          v_z_arr: np.array,
+                          time_arr: np.array,
+                          gain: float,
+                          **kwargs,
+                        ) -> tuple:
+        """Calles reconstruct_field on each run (e.g., row) in an array of
+           voltage readings. See reconstruct_field for implimentation details.
+
+        Args:
+            v_x_arr (np.array): x voltage array, where axis one is to be 
+                integrated along.
+            v_y_arr (np.array): y voltage array, where axis one is to be 
+                integrated along.
+            v_z_arr (np.array): z voltage array, where axis one is to be 
+                integrated along.
+            time_arr (np.array): time array, where axis one corresponds to 
+                the time values for each voltage measurment.
+            gain (float): scope gain.
+            **kwargs (dict): passed to reconstruct_field. See reconstruct_field
+                for information on additional arguments.
+
+        Returns:
+            tuple: three np.arrays for the reconstructed field along the 
+                x, y, and z axes (respectively). Each row corresponds to a
+                different shot.
+        """
         
 
+        field_x_arr = np.zeros_like(v_x_arr)
+        field_y_arr = np.zeros_like(v_y_arr)
+        field_z_arr = np.zeros_like(v_z_arr)
 
+        for i in time_arr.shape[0]:
+            x, y, z = self.reconstruct_field(v_x_arr[i],
+                                             v_y_arr[i],
+                                             v_z_arr[i],
+                                             time_arr[i],
+                                             gain,
+                                             **kwargs)
+            field_x_arr[i] = x
+            field_y_arr[i] = y
+            field_z_arr[i] = z
 
+        return field_x_arr, field_y_arr, field_z_arr
+        
 
     
 
@@ -838,8 +1067,4 @@ if __name__ == '__main__':
 
     probe.calibrate(save=True, overwrite=True)
     # probe.gen_probe_report()
-
-
-
-
 
