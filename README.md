@@ -90,8 +90,7 @@ x_field, y_field, z_field = field_vec
 # To do
 
 - [x] improve documentation for bdot_code
-- [ ] add auto detection for voltage array sizes for field reconstruction in bdot_code
-- [ ] add shell script to automatically process data
+- [x] add auto detection for voltage array sizes for field reconstruction in bdot_code
 - [ ] improve documentation for h5_processing
 - [ ] add TS specific aspects to h5_processing
 - [ ] add general graphing capabilities (unsure what they would look like)
