@@ -19,7 +19,7 @@ class _Probe():
     """Container class for one, three axis probes. Should not be called"""
     def __init__(self, 
                  number: int, 
-                 name: str):
+                 name: str = None):
         """
         Initialize name, number, and a few flags. Either a name or number
         must be passed
@@ -515,7 +515,7 @@ class OneAxisProbe(_Probe):
 class ThreeAxisProbe(_Probe):
     def __init__(self, 
                  number: int,
-                 name: str,
+                 name: str = None,
                  ):
         super().__init__(number, name)
 
@@ -784,6 +784,8 @@ class ThreeAxisProbe(_Probe):
 
 
         if save:
+            if self.name == None:
+                raise TypeError('Probe must be named before saving')
             save_data = {
                 "num": self.num,
                 "name": self.name,
@@ -864,6 +866,8 @@ class ThreeAxisProbe(_Probe):
 
     def gen_probe_report(self):
         
+        if self.name == None:
+            raise TypeError('Probe must be named before generating reports')
         with PdfPages(f'bdot_data/reports/probe_{self.num}_{self.name}_report.pdf') as pdf:
             page1 = plt.figure(figsize=(8.5,11))
             header, plot_fig, footer = page1.subfigures(nrows=3, 
@@ -889,7 +893,7 @@ class ThreeAxisProbe(_Probe):
 
             for i in range(3):
                 axis = ['x', 'y', 'z']
-                reports = [self.j0_report, self.j1_report, self.j1_report]
+                reports = [self.j0_report, self.j1_report, self.j2_report]
                 page_i = plt.figure(figsize=(8.5, 11))
                 header, plot_fig = page_i.subfigures(nrows=2, ncols=1, 
                                                 height_ratios=[4, 7])
@@ -1052,7 +1056,7 @@ class ThreeAxisProbe(_Probe):
         field_y_arr = np.zeros_like(v_y_arr)
         field_z_arr = np.zeros_like(v_z_arr)
 
-        for i in time_arr.shape[0]:
+        for i in range(time_arr.shape[0]):
             x, y, z = self.reconstruct_field(v_x_arr[i],
                                              v_y_arr[i],
                                              v_z_arr[i],
@@ -1088,5 +1092,5 @@ if __name__ == '__main__':
 
     probe.clip(20)
     probe.graph_raw_data(show=True)
-    probe.calibrate(verbose=True, overwrite=True)
+    probe.calibrate(overwrite=True, save=True)
     probe.gen_probe_report()

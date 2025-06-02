@@ -1,0 +1,40 @@
+{
+    "num": 2,
+    "name": "Shaved-05-28",
+    "a": [
+        [
+            -1.4012338436238682e-06,
+            -4.3217539079494286e-07,
+            2.2797471554126006e-07
+        ],
+        [
+            2.72918937152492e-07,
+            -1.7778999918892294e-06,
+            5.137880424172218e-07
+        ],
+        [
+            -1.650032014090877e-07,
+            1.396277507974315e-07,
+            1.4981828088694882e-06
+        ]
+    ],
+    "tau": [
+        -2.1424472343206258e-08,
+        -2.2196598478628356e-08,
+        -1.5988351310653985e-08
+    ],
+    "tau_s": [
+        1.318541421481457e-08,
+        1.0682593653166715e-08,
+        1.3455980498001942e-08
+    ],
+    "N": 2,
+    "type": "1mm",
+    "calibration_info": {
+        "calibration_time": "11:01:16 06/02/25 PDT",
+        "calibration_notes": "",
+        "calibration_results_j_is_0": "[[Fit Statistics]]\n    # fitting method   = leastsq\n    # function evals   = 230\n    # data points      = 9480\n    # variables        = 5\n    chi-square         = 9.8606e-04\n    reduced chi-square = 1.0407e-07\n    Akaike info crit   = -152416.373\n    Bayesian info crit = -152380.588\n[[Variables]]\n    a_0:   -1.4012e-06 +/- 1.2022e-09 (0.09%) (init = 1e-06)\n    a_1:    2.7292e-07 +/- 5.1543e-10 (0.19%) (init = 1e-06)\n    a_2:   -1.6500e-07 +/- 4.8596e-10 (0.29%) (init = 1e-06)\n    tau:   -2.1424e-08 +/- 1.1877e-10 (0.55%) (init = 1e-08)\n    tau_s:  1.3185e-08 +/- 1.1170e-10 (0.85%) (init = 1e-08)\n[[Correlations]] (unreported correlations are < 0.100)\n    C(tau, tau_s) = +0.9784\n    C(a_0, tau)   = -0.9182\n    C(a_0, tau_s) = -0.9134\n    C(a_1, tau)   = +0.4171\n    C(a_1, tau_s) = +0.4150\n    C(a_0, a_1)   = -0.3854\n    C(a_2, tau)   = -0.2675\n    C(a_2, tau_s) = -0.2661\n    C(a_0, a_2)   = +0.2472\n    C(a_1, a_2)   = -0.1123",
+        "calibration_results_j_is_1": "[[Fit Statistics]]\n    # fitting method   = leastsq\n    # function evals   = 263\n    # data points      = 9480\n    # variables        = 5\n    chi-square         = 0.00282972\n    reduced chi-square = 2.9865e-07\n    Akaike info crit   = -142422.427\n    Bayesian info crit = -142386.642\n[[Variables]]\n    a_0:   -4.3218e-07 +/- 9.0544e-10 (0.21%) (init = 1e-06)\n    a_1:   -1.7779e-06 +/- 2.0119e-09 (0.11%) (init = 1e-06)\n    a_2:    1.3963e-07 +/- 7.9892e-10 (0.57%) (init = 1e-06)\n    tau:   -2.2197e-08 +/- 1.6535e-10 (0.74%) (init = 1e-08)\n    tau_s:  1.0683e-08 +/- 1.5234e-10 (1.43%) (init = 1e-08)\n[[Correlations]] (unreported correlations are < 0.100)\n    C(tau, tau_s) = +0.9805\n    C(a_1, tau)   = -0.9187\n    C(a_1, tau_s) = -0.9125\n    C(a_0, tau)   = -0.4962\n    C(a_0, tau_s) = -0.4928\n    C(a_0, a_1)   = +0.4578\n    C(a_2, tau)   = +0.1817\n    C(a_2, tau_s) = +0.1805\n    C(a_1, a_2)   = -0.1676",
+        "calibration_results_j_is_2": "[[Fit Statistics]]\n    # fitting method   = leastsq\n    # function evals   = 237\n    # data points      = 9480\n    # variables        = 5\n    chi-square         = 0.00108627\n    reduced chi-square = 1.1465e-07\n    Akaike info crit   = -151498.832\n    Bayesian info crit = -151463.047\n[[Variables]]\n    a_0:    2.2797e-07 +/- 5.2947e-10 (0.23%) (init = 1e-06)\n    a_1:    5.1379e-07 +/- 6.3036e-10 (0.12%) (init = 1e-06)\n    a_2:    1.4982e-06 +/- 1.2209e-09 (0.08%) (init = 1e-06)\n    tau:   -1.5988e-08 +/- 1.2616e-10 (0.79%) (init = 1e-08)\n    tau_s:  1.3456e-08 +/- 1.2411e-10 (0.92%) (init = 1e-08)\n[[Correlations]] (unreported correlations are < 0.100)\n    C(tau, tau_s) = +0.9837\n    C(a_2, tau)   = +0.9086\n    C(a_2, tau_s) = +0.9073\n    C(a_1, tau)   = +0.6035\n    C(a_1, tau_s) = +0.6026\n    C(a_1, a_2)   = +0.5521\n    C(a_0, tau)   = +0.3188\n    C(a_0, tau_s) = +0.3184\n    C(a_0, a_2)   = +0.2916\n    C(a_0, a_1)   = +0.1937"
+    }
+}
