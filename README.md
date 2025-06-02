@@ -16,18 +16,25 @@ The file `h5_processing.py` contains classes for preforming some initial process
 
 ### Sample use
 
-Call `PreProcessBdot` either on an already loaded h5py instance or the path to an .h5 file. It will automatically collect information on LeCroy, MSO, motor positions, laser energy, and chamber pressure. It will then automatically average over positions and align LeCroy in time. Calling `summary()` will print out some sample information on the run and calling `data` returns a dictionary with the pre-processed data. 
+Call `PreProcessBdot` either on an already loaded h5py instance or the path to an .h5 file. It will automatically collect information on LeCroy, MSO, motor positions, laser energy, and chamber pressure. It will then automatically average over positions and align LeCroy in time. Calling `LeCroy`, `MSO`, `energy`, or `pressure` gives the relevant data (the type hints should make clear what the output is). In addition, `LeCroy_lineout` gives the LeCroy data only for the y-axis lineout. `unique_positions` gives a series an array of tupes for each position containing the TCC coordinates and indexes of the shots which were taken at that point, and `unique_pos_idx` gives just the indexes of each unique position. Finally, `lineout_positions` gives the positions of the y-lineout and `lineout_idx` gives the index of the lineout positions *in the averaged data*.
 
+The following snipped loads in LeCroy data that is aligned and averaged:
 ```
 file = h5py.File('path/to_file.h5)
-PreProcData = PreProcessBdot(file)
-PreProcData.summary()
-
-bdot_x = PreProcData.data['LeCroy_x']
-bdot_time = PreProcData.data['LeCroy_t]
+loader = PreProcessBdot(file)
+x, y, z, t = loader.LeCroy
 ```
 
-output
+To graph the average x probe reading at the closest point on the y-lineout (typically (0, 0.9, 0.85)), we can run the following code:
+```
+x_line, _, _, t_line = loader.LeCroy_lineout
+x_pos0 = x_line[0]
+t_pos0 = t_line[0]
+plt.plot(t_pos0, x_pos0)
+plt.show()
+```
+
+Finally, calling `loader.summary()` gives prints the following output with information on the h5 file. Passing the argument `verbose=True` prints substantial additional information on the positions
 ```
 ================================================================================
 Summary statistics for to_file
