@@ -3,7 +3,7 @@
 
 This code was written and tested in python 3.13.1. See requirements.txt for the packages and the versions used.
 
-I *highly* recommend using a virtual enviornment for running this code. I like using [virtualenvwrapper](https://virtualenvwrapper.readthedocs.io/en/latest/) and [pyenv](https://github.com/pyenv/pyenv), but [venv](https://docs.python.org/3/library/venv.html) is easier to setup and use.
+I *highly* recommend using a virtual environment for running this code. I like using [virtualenvwrapper](https://virtualenvwrapper.readthedocs.io/en/latest/) and [pyenv](https://github.com/pyenv/pyenv), but [venv](https://docs.python.org/3/library/venv.html) is easier to setup and use.
 
 
 # Capabilities
@@ -16,9 +16,9 @@ The file `h5_processing.py` contains classes for preforming some initial process
 
 ### Sample use
 
-Call `PreProcessBdot` either on an already loaded h5py instance or the path to an .h5 file. It will automatically collect information on LeCroy, MSO, motor positions, laser energy, and chamber pressure. It will then automatically average over positions and align LeCroy in time. Calling `LeCroy`, `MSO`, `energy`, or `pressure` gives the relevant data (the type hints should make clear what the output is). In addition, `LeCroy_lineout` gives the LeCroy data only for the y-axis lineout. `unique_positions` gives a series an array of tupes for each position containing the TCC coordinates and indexes of the shots which were taken at that point, and `unique_pos_idx` gives just the indexes of each unique position. Finally, `lineout_positions` gives the positions of the y-lineout and `lineout_idx` gives the index of the lineout positions *in the averaged data*.
+Call `PreProcessBdot` either on an already loaded h5py instance or the path to an .h5 file. It will automatically collect information on LeCroy, MSO, motor positions, laser energy, and chamber pressure. It will then automatically average over positions and align LeCroy in time. Calling `LeCroy`, `MSO`, `energy`, or `pressure` gives the relevant data (the type hints should make clear what the output is). In addition, `LeCroy_lineout` gives the LeCroy data only for the y-axis lineout. `unique_positions` gives a series an array of tuples for each position containing the TCC coordinates and indexes of the shots which were taken at that point, and `unique_pos_idx` gives just the indexes of each unique position. Finally, `lineout_positions` gives the positions of the y-lineout and `lineout_idx` gives the index of the lineout positions *in the averaged data*.
 
-The following snipped loads in LeCroy data that is aligned and averaged:
+The following snippet loads in LeCroy data that has been aligned and averaged:
 ```
 file = h5py.File('path/to_file.h5)
 loader = PreProcessBdot(file)
@@ -74,7 +74,7 @@ probe.gen_probe_report()
 ```
 
 *Explanation*:
-When calling ThreeAxisProbe, you need to include the probe number, and, optionally, the name. The calibration data is expected to be nine files titles PjBi.TXT for i, j in (X,Y,Z) where the first 15 rows are header and, in order from left to right, columns for frequency (Hz), magnitude (unitless), and phase (deg). The first 50 data points are clipped because the phase signal tends to be extra noisy there. When calibrating, there setting `overwrite=True` allows any old data to be updated.
+When calling ThreeAxisProbe, you need to include the probe number, and, optionally, the name. The calibration data is expected to be nine files titles PjBi.TXT for i, j in (X, Y, Z) where the first 15 rows are header and, in order from left to right, columns for frequency (Hz), magnitude (unitless), and phase (deg). The first 50 data points are clipped because the phase signal tends to be extra noisy there. When calibrating, there setting `overwrite=True` allows any old data to be updated.
 
 **Field Reconstruction**
 ```
@@ -90,7 +90,7 @@ x_field, y_field, z_field = field_vec
 # To do
 
 - [x] improve documentation for bdot_code
-- [x] add auto detection for voltage array sizes for field reconstruction in bdot_code
+- [x] add auto-detection for voltage array sizes for field reconstruction in bdot_code
 - [ ] improve documentation for h5_processing
 - [ ] add TS specific aspects to h5_processing
 - [ ] add general graphing capabilities (unsure what they would look like)
