@@ -8,7 +8,6 @@ import matplotlib.ticker as ticker
 class PreProcessH5():
 
     def __init__(self, file):
-
         if type(file) is str:
             if not os.path.exists(file) or os.path.splitext(file)[1] != '.h5':
                 raise ValueError(f'No .h5 file exists at {file}')
@@ -19,6 +18,8 @@ class PreProcessH5():
         else:
             raise ValueError(f'file must be str or h5py._hl.files.File, but '
                              f'file is {type(file)}')
+        
+        self._num_shots = len(file['epoch'])
         self.data = None
         self._file = file
         self.name = os.path.splitext(os.path.basename(file.filename))[0]
@@ -48,23 +49,18 @@ class PreProcessH5():
             'energy' : np.array(f['PNGdigitizer:Ch2:Energy']),
             'pressure' : np.array(f['Vacuum:DS:PressureCC'])
         }
+
         return raw_data
     
     def _unique_positions(self, 
-        motor_x: np.array, 
-        motor_y: np.array, 
-        motor_z: np.array,
-        save_lineout_pos: bool = True,
-        **kwargs
-        ) -> list:
+                          *arr, 
+                          save_lineout_pos: bool = True,
+                          ) -> list:
         """
         Find the unique motor positions, and return those positions with the 
         indicies that they appear at
         """
-        self._total_pos = len(motor_x)
-        corr_pos = self._motor_to_tcc(motor_x, motor_y, motor_z, **kwargs)
-        x, y, z = np.round(corr_pos, 2)
-        pos_vec = np.vstack((x, y, z))
+        pos_vec = np.vstack((arr))
         unique_pos = np.unique(pos_vec, axis=1).T
 
         pos_and_idx_list = []
@@ -86,29 +82,43 @@ class PreProcessH5():
     
 
     def avg_over_locations(self, 
+                           keys_for_avg: list,
                            data_dict: dict | None = None, 
                            **kwargs):
 
         if data_dict is None:
-            data_dict = self.read_raw()
+            data_dict = self.data
         elif type(data_dict) is not dict:
             raise TypeError(f'data_dict must be a dict, but a'
                             f' {type(data_dict)} was passed')
 
+        if 'offset' in kwargs.keys():
+            offset = kwargs['offset']
+        else:
+            offset = self._offset
+
         try:
-            x = data_dict['motor_x']
-            y = data_dict['motor_y']
-            z = data_dict['motor_z']
+            pos_vec = self._motor_to_tcc(
+                data_dict['motor_x'],
+                data_dict['motor_y'],
+                data_dict['motor_z'],
+                offset
+            )
+            
+            x, y, z = np.round(pos_vec, 2)
+            data_dict['motor_x'] = x
+            data_dict['motor_y'] = y
+            data_dict['motor_z'] = z
         except:
             raise ValueError('data_dict must contain "motor_x", "motor_y",'
                              f' and "motor_z"')
-
-        pos_arr = self._unique_positions(x, y, z, **kwargs)
+        args = [data_dict[key] for key in keys_for_avg]
+        pos_arr = self._unique_positions(*args)
 
         averaged_data = {
-            'motor_x' : [p[0][0] for p in pos_arr],
-            'motor_y' : [p[0][1] for p in pos_arr],
-            'motor_z' : [p[0][2] for p in pos_arr],
+            'motor_x' : np.array([p[0][0] for p in pos_arr]),
+            'motor_y' : np.array([p[0][1] for p in pos_arr]),
+            'motor_z' : np.array([p[0][2] for p in pos_arr]),
             'y_lineout': self.data['y_lineout'],
             'unique_positions': self.data['unique_positions']
         }
@@ -117,6 +127,15 @@ class PreProcessH5():
             if key in ('motor_x', 'motor_y', 'motor_z', 
                        'y_lineout', 'unique_positions'):
                 pass
+
+            elif key in ('images', 'ts_timing'):
+                avg_vals = []
+                for pos in pos_arr:
+                    idxs = pos[1]
+                    val = np.average(value[idxs], axis=0)
+                    avg_vals.append(val)
+                averaged_data[key] = np.array(avg_vals)
+
             else:
                 avg_vals = []
                 mins = []
@@ -133,12 +152,50 @@ class PreProcessH5():
                 averaged_data[key] = np.array(avg_vals)
                 averaged_data[f'{key}_mins'] = np.array(mins)
                 averaged_data[f'{key}_maxes'] = np.array(maxes)
+
         
         self.data = averaged_data
         self._flags.append('averaged')
 
         return self.data
+    
 
+    def summary(self, data_type: str, verbose=False, ):
+        """Method to pretty print a brief summary of h5 data"""
+        d = self.data
+        erg_avg = np.average(d['energy'])
+        erg_std = np.std(d['energy'])
+
+        pa_avg = np.average(d['pressure'])
+        pa_std = np.std(d['pressure'])
+
+        print(f'{'\n'}{'='*80}')
+        print(f'Summary statistics for {self.name}')
+        print(f'>{'-'*78}<')
+        print('Motor statistics:')
+        print(f'  -> Total number of shots: {self._num_shots}')
+        if data_type == 'TS':
+            print(f'  -> Total number of TS shot sets: {self._num_shots//4}')
+        if 'averaged' in self._flags:
+            print(f'  -> Number of unique positions: {len(d['motor_x'])}')
+            if verbose:
+                print('  -> Position list:')
+                for i, row in enumerate(d['unique_positions']):
+                    r = [float(e) for e in row[0]]
+                    print(f'      * Pos {i:02d} at {r} has {len(row[1])} shots')
+                print('  -> x=0 lineout positions:')
+                for i, row in enumerate(d['y_lineout']):
+                    r = [float(e) for e in row[0]]
+                    print(f'      * Pos {i:02d} at {r} has indicies {row[1]}')
+        print(f'>{'-'*78}<')
+        print('Other statistics:')
+        print(f'  -> Laser energy: {erg_avg:.3f}±{erg_std:.3f} J')
+        print(f'  -> Chamber pressure: {pa_avg*1e3:.3f}±{pa_std*1e3:.3f} mTorr')
+        if verbose:
+            print(f'>{'-'*78}<')
+            print('Pre processing flags:')
+            print(f'  -> {self._flags}')
+        print('='*80)
 
     @property
     def lineout_positions(self):
@@ -177,12 +234,11 @@ class PreProcessBdot(PreProcessH5):
     def __init__(self, file, processing='default', **kwargs):
         super().__init__(file)
         
-        self._offsets = [3.4, 3.6, 1.35]
+        self._offset= [3.4, 3.6, 1.35]
         self._timedelay = 35 * 1e-9    # given in seconds
 
         if processing == 'default':
             data = self.read_raw()
-
             kws = list(inspect.signature(self.align_lecroy).parameters.keys())
             args_for_align = {kw: kwargs[kw] for kw in kws & kwargs.keys()}
             data_aligned = self.align_lecroy(data, **args_for_align)
@@ -227,7 +283,9 @@ class PreProcessBdot(PreProcessH5):
         return raw_data
 
     def avg_over_locations(self, data_dict: dict| None = None):
-        return super().avg_over_locations(data_dict, offsets=self._offsets)
+        return super().avg_over_locations(keys_for_avg=['motor_x', 'motor_y', 
+                                         'motor_z'], data_dict=data_dict, 
+                                         offsets=self._offset)
     
     def align_lecroy(self, 
                      data_dict: dict | None = None,
@@ -264,42 +322,10 @@ class PreProcessBdot(PreProcessH5):
         self.data = aligned_dict
 
         return aligned_dict
-            
-    def summary(self, verbose=False):
-        """Method to pretty print a brief summary of h5 data"""
-        d = self.data
-        erg_avg = np.average(d['energy'])
-        erg_std = np.std(d['energy'])
-
-        pa_avg = np.average(d['pressure'])
-        pa_std = np.std(d['pressure'])
-
-        print(f'{'\n'}{'='*80}')
-        print(f'Summary statistics for {self.name}')
-        print(f'>{'-'*78}<')
-        print('Motor statistics:')
-        print(f'  -> Total number of positions: {self._total_pos}')
-        if 'averaged' in self._flags:
-            print(f'  -> Number of unique positions: {len(d['motor_x'])}')
-            if verbose:
-                print('  -> Position list:')
-                for i, row in enumerate(d['unique_positions']):
-                    r = [float(e) for e in row[0]]
-                    print(f'      * Pos {i:02d} at {r} has {len(row[1])} shots')
-                print('  -> x=0 lineout positions:')
-                for i, row in enumerate(d['y_lineout']):
-                    r = [float(e) for e in row[0]]
-                    print(f'      * Pos {i:02d} at {r} has indicies {row[1]}')
-        print(f'>{'-'*78}<')
-        print('Other statistics:')
-        print(f'  -> Laser energy: {erg_avg:.3f}±{erg_std:.3f} J')
-        print(f'  -> Chamber pressure: {pa_avg*1e3:.3f}±{pa_std*1e3:.3f} mTorr')
-        if verbose:
-            print(f'>{'-'*78}<')
-            print('Pre processing flags:')
-            print(f'  -> {self._flags}')
-        print('='*80)
     
+    def summary(self, verbose=False):
+        super().summary('Bdot', verbose)
+            
     
     @property
     def LeCroy(self):
@@ -337,34 +363,112 @@ class PreProcessBdot(PreProcessH5):
     def bounds(self, key: str):
         d = self.data
         return d[key], d[f'{key}_mins'], d[f'{key}_maxes']
+    
+
+
+
+
+
+
+
+
+class PreProcessTS(PreProcessH5):
+    
+    def __init__(self, file):
+        super().__init__(file)
+
+        self._offset = [0, 0, 0]
+        self._num_shots = len(self._file['epoch'])
+        self.read_raw()
+        self.remove_background()
+        self.avg_over_locations()
+
+
+    def read_raw(self) -> dict:
+        
+        """Loads the raw data from the h5 file initialized in __init__.
+        Only contains data from the motor positions, energy, pressure,
+        LeCroy scope, and MSO scope. For the MSO scope, 'MSO_probe' 
+        refers to the 1in bdot probe, if used. If not used, that channel 
+        is just noise. 'MSO_voltage' refers to the bank voltage.
+
+        Returns:
+            dict: dictionary containing the keys in PreProcessH5.read_raw(),
+            in addition to 'MSO_current', 'MSO_probe', 'MSO_voltage', 
+            'MSO_time', 'LeCroy_x', 'LeCroy_y', 'LeCroy_z', 'LeCroy_time',
+            and 'LeCroy_photodiode'.    
+        """
+        
+        file = self._file
+        n = self._num_shots
+        raw_data = super().read_raw()
+
+        raw_data['images'] = {f'{n}':np.array(file[f'13PICAM1:Pva1:Image/image {n}']) for n in range(n)}
+        raw_data['ts_timing'] = file['actionlist/TS:1w2wDelay']
+
+        self.data = raw_data
+        self._flags.append('raw_loaded')
+        return raw_data
+    
+    def remove_background(self, data_dict: dict | None = None):
+    
+        if data_dict is None:
+            data_dict = self.data
+        
+        new_data = {}
+        for key, val in data_dict.items():
+            if key == 'images':
+                images = np.empty((self._num_shots//4, 511, 512))
+                for i in range(self._num_shots//4):
+                    background = np.array(val[f'{4*i+3}'])
+                    foreground = np.array(val[f'{4*i+1}'])
+                    data  = np.subtract(foreground, background, dtype=float)
+                    images[i] = data
+                new_data[key] = np.array(images)
+            else:
+                new_data[key] = val[1::4]
+        self._flags.append('background_removed')
+        self.data = new_data
+        return new_data
+    
+    def avg_over_locations(self, data_dict : dict | None = None):
+        return super().avg_over_locations(
+            keys_for_avg=['motor_x', 'motor_y', 'motor_z', 'ts_timing'],
+            data_dict=data_dict
+        )
+    
+    def spectrums(self):
+
+        if 'background_removed' not in self._flags:
+            raise LookupError('background must be removed before constructing spectrums')
+        
+        num = len(self.unique_positions)
+        spectrums = np.array([np.sum(self.data['images'][n], axis=0) for n in range(num)])
+
+        self.data['spectrums'] = spectrums
+        return spectrums
+        
+
+
+
+
+
+    
+    def summary(self, verbose=False):
+        super().summary(data_type='TS', verbose=verbose)
+
+    @property
+    def wavelengths(cls):
+        return (np.arange(512) * 19.80636 / 511) + 522.918
+
 
 
 
 
 if __name__ == '__main__':
-    file = h5py.File('05-27/Probe2_0V-2025-05-27.h5')
-    data = PreProcessBdot(file, gain=2)
+    loader = PreProcessTS('06-02/TS_lineout_500V-2025-06-02.h5')
+    loader.summary(verbose=True)
 
-    
-    x, x_min, x_max = data.bounds('LeCroy_x')
-    x = x[:,100:-3500]
-    x_min = x_min[:,100:-3500]
-    x_max = x_max[:,100:-3500]
-    t = data.LeCroy[3][:,100:-3500]
 
-    fig = plt.figure(figsize=(12, 25), constrained_layout=True)
-    fig.suptitle('05-27, CH, 0V')
-    axs = fig.subplots(9, 2, sharex=True, sharey=True)
-    for j, ax in enumerate(axs.flatten()):
-        ax.set_title(f'Position {j}')
-        ax.plot(t[j]*1e9, x[j], label='Average', color='black')
-        ax.fill_between(t[j]*1e9, x_min[j], x_max[j], color='blue', alpha=0.5, label='Min/Max band')
-        ax.set_ylabel('voltage (V)')
-        ax.set_xlabel('time (ns)')
-        ax.legend(loc='upper right')
-        ax.text(0.95,0.1, s=f'Avg gap size: {np.average(x_max[j] - x_min[j]):.3f} V', transform=ax.transAxes, ha='right')
-        ax.tick_params(labelbottom=True)
-        ax.tick_params(labelleft=True)
 
-    
-    plt.savefig('MinMaxBand_Ch_0V-05-27.pdf')
+
