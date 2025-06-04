@@ -1,10 +1,14 @@
 __pycache__/
 Jena/
 misc/
+bdot_data/
+bdot_raw_trace_output/
+06*
 05*
 *.h5
 *.png
 *.sh
-
+*.pdf
+*.mp4
 .DS_store
 foo.py
