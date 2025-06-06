@@ -1076,21 +1076,4 @@ class ThreeAxisProbe(_Probe):
 
 
 if __name__ == '__main__':
-
-    probe_a = ThreeAxisProbe(2, 'Copper-05-28')
-    probe_a.load_data('bdot_data/probe-2-05-28_with_Cu-data')
-    probe_b = ThreeAxisProbe(2, 'Shaved-05-28')
-    probe_b.load_data('bdot_data/probe-2-05-28-shaved-data')
-    probe_c = ThreeAxisProbe(2, '05-23')
-    probe_c.load_data('bdot_data/probe-2-calib-05-23-data')
-    probe_d = ThreeAxisProbe(2, '05-21')
-    probe_d.load_data('bdot_data/probe_2_calibration_data-05-21')
-    probe_e = ThreeAxisProbe(2, '05-26')
-    probe_e.load_data('bdot_data/probe_2_calibration_05_26-data')
-
-    probe = probe_e
-
-    probe.clip(20)
-    probe.graph_raw_data(show=True)
-    probe.calibrate(overwrite=True, save=True)
-    probe.gen_probe_report()
+    pass
