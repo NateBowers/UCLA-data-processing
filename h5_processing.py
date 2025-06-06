@@ -49,17 +49,13 @@ class PreProcessH5():
             'energy' : np.array(f['PNGdigitizer:Ch2:Energy']),
             'pressure' : np.array(f['Vacuum:DS:PressureCC'])
         }
-
         return raw_data
     
     def _unique_positions(self, 
                           *arr, 
                           save_lineout_pos: bool = True,
-                          ) -> list:
-        """
-        Find the unique motor positions, and return those positions with the 
-        indicies that they appear at
-        """
+                          ) -> list[np.array, list]:
+
         pos_vec = np.vstack((arr))
         unique_pos = np.unique(pos_vec, axis=1).T
 
@@ -128,7 +124,7 @@ class PreProcessH5():
                        'y_lineout', 'unique_positions'):
                 pass
 
-            elif key in ('images', 'ts_timing'):
+            elif key in ('images', 'ts_timing', 'LeCroy_time', 'MSO_time'):
                 avg_vals = []
                 for pos in pos_arr:
                     idxs = pos[1]
@@ -160,7 +156,7 @@ class PreProcessH5():
         return self.data
     
 
-    def summary(self, data_type: str, verbose=False, ):
+    def summary(self, data_type: str, verbose=False):
         """Method to pretty print a brief summary of h5 data"""
         d = self.data
         erg_avg = np.average(d['energy'])
@@ -289,7 +285,7 @@ class PreProcessBdot(PreProcessH5):
     
     def align_lecroy(self, 
                      data_dict: dict | None = None,
-                     attenuation: float = 1,
+                     attenuation: float = 0,
                      gain: float = 1) -> dict:
         
         if data_dict is None:
@@ -350,7 +346,7 @@ class PreProcessBdot(PreProcessH5):
         return x, y, z, t
 
     @property
-    def MSO(self):
+    def MSO(self) -> tuple[np.array, np.array, np.array, np.array]:
         """
         Returns MSO current, bank voltage, probe readout, and time as a tuple
         """
@@ -374,7 +370,7 @@ class PreProcessBdot(PreProcessH5):
 
 class PreProcessTS(PreProcessH5):
     
-    def __init__(self, file):
+    def __init__(self, file, spectrums: bool = False):
         super().__init__(file)
 
         self._offset = [0, 0, 0]
@@ -382,21 +378,25 @@ class PreProcessTS(PreProcessH5):
         self.read_raw()
         self.remove_background()
         self.avg_over_locations()
+        if spectrums:
+            self.spectrums()
 
 
     def read_raw(self) -> dict:
         
         """Loads the raw data from the h5 file initialized in __init__.
-        Only contains data from the motor positions, energy, pressure,
-        LeCroy scope, and MSO scope. For the MSO scope, 'MSO_probe' 
-        refers to the 1in bdot probe, if used. If not used, that channel 
-        is just noise. 'MSO_voltage' refers to the bank voltage.
+        Only contains data from the motor positions, energy, pressure, 
+        spectra (PICAM1), and thomson scattering delay.
 
         Returns:
-            dict: dictionary containing the keys in PreProcessH5.read_raw(),
-            in addition to 'MSO_current', 'MSO_probe', 'MSO_voltage', 
-            'MSO_time', 'LeCroy_x', 'LeCroy_y', 'LeCroy_z', 'LeCroy_time',
-            and 'LeCroy_photodiode'.    
+            dict: dictionary containing the keys/values in PreProcessH5.read_raw(),
+            in addition to 
+                - 'images': dict (contains every individual spectrum. Of the form 
+                        'image i' : 512x511 pixel array where the 512 columns 
+                        correspond to a different frequency 
+
+                - 'ts_timing': array (delay between heater beam and TS beam 
+                        in nano seconds)
         """
         
         file = self._file
@@ -418,12 +418,12 @@ class PreProcessTS(PreProcessH5):
         new_data = {}
         for key, val in data_dict.items():
             if key == 'images':
-                images = np.empty((self._num_shots//4, 511, 512))
-                for i in range(self._num_shots//4):
-                    background = np.array(val[f'{4*i+3}'])
-                    foreground = np.array(val[f'{4*i+1}'])
-                    data  = np.subtract(foreground, background, dtype=float)
-                    images[i] = data
+                images = [
+                    np.subtract(np.array(val[f'{4*i+1}']), 
+                                np.array(val[f'{4*i+3}']), dtype=float) 
+                    for i in range(self._num_shots//4)
+                ]
+
                 new_data[key] = np.array(images)
             else:
                 new_data[key] = val[1::4]
@@ -437,38 +437,69 @@ class PreProcessTS(PreProcessH5):
             data_dict=data_dict
         )
     
-    def spectrums(self):
-
+    def spectrums(self, 
+                  bin_width: int=1
+                  ) -> np.array:
         if 'background_removed' not in self._flags:
-            raise LookupError('background must be removed before constructing spectrums')
-        
+            raise LookupError('background must be removed before ' \
+                'constructing spectrums')
+        if bin_width not in (1, 2, 4, 8):
+            raise ValueError(f'Bins cannot have width {bin_width},'
+                             f'it must be 1, 2, 4, or 8')
+
         num = len(self.unique_positions)
-        spectrums = np.array([np.sum(self.data['images'][n], axis=0) for n in range(num)])
+        spectrums = np.array([np.sum(self.data['images'][n, 215:375,:], axis=0) for n in range(num)])
+        binned_spectrums = [
+            np.add.reduceat(spectra, np.arange(0, 512, bin_width))
+            for spectra in spectrums
+        ]
 
-        self.data['spectrums'] = spectrums
-        return spectrums
-        
+        self.data['spectrums'] = binned_spectrums
+        self.data['wavelengths'] = PreProcessTS.wavelengths(bin_width)
 
-
-
-
-
-    
+        return binned_spectrums
+            
     def summary(self, verbose=False):
         super().summary(data_type='TS', verbose=verbose)
 
-    @property
-    def wavelengths(cls):
-        return (np.arange(512) * 19.80636 / 511) + 522.918
 
+    @staticmethod
+    def wavelengths(bin_width: int=1) -> np.array:
+        """Wavelength range captured in TS spectrum"""
+        if bin_width not in (1, 2, 4, 8):
+            raise ValueError(f'Bins cannot have width {bin_width},'
+                             f'it must be 1, 2, 4, or 8')
+        
+        num_vals = 512 / bin_width
+        return (np.arange(num_vals) * bin_width * 19.80636 / 511) + 522.918
+    
+    @staticmethod
+    def bin_to_wavelength(bin):
+        """Converts bin (pixel) to wavelength (nm)"""
+        return bin * 0.03876
 
 
 
 
 if __name__ == '__main__':
     loader = PreProcessTS('06-02/TS_lineout_500V-2025-06-02.h5')
-    loader.summary(verbose=True)
+    images = loader.data['images']
+    spectrums = loader.spectrums()
+    wavelengths = loader.data['wavelengths']
 
+    print(len(images))
+
+    fig = plt.figure(figsize=(9, 54), constrained_layout=True)
+    axs = fig.subplots(18, 3)
+
+    for im, ax, spectra in zip(images, axs.flatten(), spectrums):
+        ax.matshow(im)
+        ax1 = ax.twinx()
+        ax1.plot(spectra)
+        ax.axhline(215, color='red')
+        ax.axhline(375, color='red')
+
+    plt.savefig('bar.pdf')
 
 
 
