@@ -2,6 +2,8 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+from scipy.signal import convolve
+from skimage.measure import block_reduce
 import os
 import datetime
 import sys
@@ -104,7 +106,7 @@ class TSAnalyzer():
 		for delay in unique_delays:
 			try:
 				fg_idxs = np.argwhere(np.all(info_arr[:,:3] == (1, 0, delay), axis=1))
-				bg_idxs = np.argwhere(np.all(info_arr[:,:3] == (0, 0, delay), axis=1))
+				bg_idxs = np.argwhere(np.all(info_arr[:,:3] == (0, 1, delay), axis=1))
 				im_fg = np.average(images[fg_idxs[0]], axis=0)
 				im_bg = np.average(images[bg_idxs[0]], axis=0)
 				im = im_fg - im_bg
@@ -131,8 +133,40 @@ class TSAnalyzer():
 		self.programmed_delays = unique_delays
 		self.num_shots = len(unique_delays)
 
+
+		#############################################
+		#                 WARNINGS:                 #
+		#                                           #
+		# NOTCH IS NOT CORRECTED FOR BEFORE FITTING #
+		#     ASSUMES NON-COLLECTIVE SCATTERING     #
+		#                                           #
+		#############################################
+
+
+		means = []
+		st_devs = []
+		scales = []
+		for i in range(self.num_shots):
+			popt, _ = curve_fit(self.gauss, 
+						self.wavelengths, 
+						self.spectra[i],
+						p0 = [532, 5, 1000])
+			
+			mean, st_dev, scale = popt
+			means.append(mean)
+			st_devs.append(st_dev)
+			scales.append(scale)
+
+		self.means = np.array(means)
+		self.st_devs = np.array(st_devs)
+		self.scales = np.array(scales)
+
+		self.density = 5.6e16 * 1e-6 * self.scales * 512 / 19
+		self.temp = np.abs(0.903 * self.st_devs)
+
+
+
 		# TO DO
-		# Add code to fit (either with a gaussian or plasmapy)
 		# Add method to filter out extreme outliers (akin to a convolution)
 		# Add method to downsample/filter data to smooth
 
@@ -142,14 +176,37 @@ class TSAnalyzer():
 
 	def plot_spectra(self):
 
+		w = self.wavelengths
+
 		nrows = self.num_shots // 3 + 1
-		fig = plt.figure(figsize=(12, 2 + nrows*3), constrained_layout=True)
+		fig = plt.figure(figsize=(15, 2 + nrows*3))
+		fig.suptitle(self._name)
 		axs = fig.subplots(nrows=nrows, ncols=3, sharex=True, sharey=True)
 		for i, ax in enumerate(axs.flatten()):
-			ax.plot(self.wavelengths, self.spectra[i])
+			if i >= self.num_shots:
+				ax.set_visible(False)
+				pass
+			else:
+				spectrum = self.spectra[i]
+				fit_stats = [self.means[i], self.st_devs[i], self.scales[i]]
+				fit = TSAnalyzer.gauss(w, *fit_stats)
+				ax.plot(w, spectrum, label='data')
+				ax.plot(w, fit, color='red', label='fitted curve')
+
+				w_red = block_reduce(w, block_size=2, func=np.mean, cval=np.mean(w))
+				a = block_reduce(spectrum, block_size=2, func=np.mean, cval=np.mean(spectrum))
+				b = convolve(a, [0.1, 0.2, 0.4, 0.2, 0.1], 'same')
+				ax.plot(w_red, b, color='black', label='downsampled data')
+				s = f'mean = {fit_stats[0]:.2f}{'\n'}std dev = {fit_stats[1]:.3f}{'\n'}scale = {fit_stats[2]:.1f}{'\n'}'
+				ax.text(0.05,0.95, s, fontsize='small', transform=ax.transAxes, va='top')
+
+				s = f'n_e = {self.density[i]:.2g} cm$^{{-3}}${'\n'}T_e = {self.temp[i]:.3f} eV'
+				ax.text(0.05,0.75, s, fontsize='small', transform=ax.transAxes, va='top')
+
+				ax.legend()
 
 
-
+		plt.show()
 		pass
 
 	def plot_shot_timing():
@@ -161,18 +218,20 @@ class TSAnalyzer():
 
 	@staticmethod
 	def gauss(x, mu, sigma, alpha):
-		return (alpha * 1 / np.sqrt(2 * np.pi * sigma**2) * 
-					np.exp( - (x-mu) **2 / (2 * sigma**2)))
+		return (alpha / np.sqrt(2 * np.pi * sigma ** 2) * 
+		  np.exp( - np.square(x - mu) / (2 * sigma**2)))
 
 
 
 
 if __name__ == '__main__':
 	file = (
-		'06-06/TS_Cu_Location2_400V-2025-06-06.h5',
-		'06-06/TS_Cu_Location2_400V_rerun-2025-06-06.h5',
-		'06-06/TS_Cu_Location2_400V_rerun2-2025-06-06.h5',
+		'06-06/TS_Al_Location3_0V-2025-06-06.h5',
+		# '06-06/TS_Cu_Location4_0V_rerun-2025-06-06.h5',
 	)
+
+	# foo = TSAnalyzer.gauss(np.array([1,2,3]), 1, 1, 1)
+
 	data = TSAnalyzer(file, position=1, voltage=400, material='Cu')
 	data.plot_spectra()
 
