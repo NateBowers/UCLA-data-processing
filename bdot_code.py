@@ -864,71 +864,126 @@ class ThreeAxisProbe(_Probe):
 
         
 
-    def gen_probe_report(self):
+    def gen_probe_report(self, just_img = False):
         
-        if self.name == None:
-            raise TypeError('Probe must be named before generating reports')
-        with PdfPages(f'bdot_data/reports/probe_{self.num}_{self.name}_report.pdf') as pdf:
-            page1 = plt.figure(figsize=(8.5,11))
-            header, plot_fig, footer = page1.subfigures(nrows=3, 
-                                               ncols=1, 
-                                               height_ratios=[2, 8, 1])
-            header.text(0.5, 0.5, f'Calibration data for probe number '
-                        f'{self.num} ({self.name})', wrap=True, ha='center', 
-                        fontvariant='small-caps', fontsize='x-large')
-            header.text(0.5, 0.4, f'Calibrated on {time.strftime('%X %x %Z', 
-                        time.localtime())}', ha='center')
-            plot_fig = self.graph_raw_data(plot_fig, show=False)
-            plt.subplots_adjust(left=0.15, right=0.85, bottom=0.2)
-            footer.text(0.5,0.4, s='1', ha='center')
-            pdf.savefig()
-            plt.close()
-
-            data_true = [[self.r_00, self.i_00],
-                         [self.r_11, self.i_11],
-                         [self.r_22, self.i_22]]
-            data_pred = [self._predict_indiv(self.f, 0,0),
-                         self._predict_indiv(self.f, 1,1),
-                         self._predict_indiv(self.f, 2,2)]
-
-            for i in range(3):
-                axis = ['x', 'y', 'z']
-                reports = [self.j0_report, self.j1_report, self.j2_report]
-                page_i = plt.figure(figsize=(8.5, 11))
-                header, plot_fig = page_i.subfigures(nrows=2, ncols=1, 
-                                                height_ratios=[4, 7])
-                header.text(0.5, 0.82, f'Fit results for probe on {axis[i]} '
-                            f'axis', ha='center', fontsize='large')
-                header.text(0.5,0, reports[i], ha='center', 
-                            ma='left', fontsize='small')
-                
-                true = data_true[i]
-                pred = data_pred[i]
-                
-                
-                axs = plot_fig.subplots(2, 1, sharex=True)            
-                title = ['Re', 'Im']
-                
-                for j, ax in enumerate(axs):
-                    ax.set_title(f'Data v. Predicted Fit for {title[j]} '
-                                 f'Component of on axis for {axis[i]} probe')
-                    ax.set_xlabel('Angular frequency (Mrad/s)')
-                    ax.set_ylabel('Linear unitless')
-                    ax.plot(self.f*1e-6, true[j], color='blue', 
-                            label='Data')
-                    ax.plot(self.f*1e-6, pred[j], color='red', 
-                            linestyle='--', label='Predicted fit')
-                    ax.grid(color='darkgray')
-                    ax.minorticks_on()
-                    ax.grid(which='minor', linestyle='--', color='lightgray')
-                    ax.legend()
-                plot_fig.text(0.5,0.05, s=(i+2), ha='center')
-                plt.subplots_adjust(0.15, 0.15, 0.85, 0.9, hspace=0.25)
-
-
-
+        if not just_img:
+            if self.name == None:
+                raise TypeError('Probe must be named before generating reports')
+            with PdfPages(f'bdot_data/reports/probe_{self.num}_{self.name}_report.pdf') as pdf:
+                page1 = plt.figure(figsize=(8.5,11))
+                header, plot_fig, footer = page1.subfigures(nrows=3, 
+                                                ncols=1, 
+                                                height_ratios=[2, 8, 1])
+                header.text(0.5, 0.5, f'Calibration data for probe number '
+                            f'{self.num} ({self.name})', wrap=True, ha='center', 
+                            fontvariant='small-caps', fontsize='x-large')
+                header.text(0.5, 0.4, f'Calibrated on {time.strftime('%X %x %Z', 
+                            time.localtime())}', ha='center')
+                plot_fig = self.graph_raw_data(plot_fig, show=False)
+                plt.subplots_adjust(left=0.15, right=0.85, bottom=0.2)
+                footer.text(0.5,0.4, s='1', ha='center')
                 pdf.savefig()
                 plt.close()
+
+                data_true = [[self.r_00, self.i_00],
+                            [self.r_11, self.i_11],
+                            [self.r_22, self.i_22]]
+                data_pred = [self._predict_indiv(self.f, 0,0),
+                            self._predict_indiv(self.f, 1,1),
+                            self._predict_indiv(self.f, 2,2)]
+
+                for i in range(3):
+                    axis = ['x', 'y', 'z']
+                    reports = [self.j0_report, self.j1_report, self.j2_report]
+                    page_i = plt.figure(figsize=(8.5, 11))
+                    header, plot_fig = page_i.subfigures(nrows=2, ncols=1, 
+                                                    height_ratios=[4, 7])
+                    header.text(0.5, 0.82, f'Fit results for probe on {axis[i]} '
+                                f'axis', ha='center', fontsize='large')
+                    header.text(0.5,0, reports[i], ha='center', 
+                                ma='left', fontsize='small')
+                    
+                    true = data_true[i]
+                    pred = data_pred[i]
+                    
+                    
+                    axs = plot_fig.subplots(2, 1, sharex=True)            
+                    title = ['Re', 'Im']
+                    
+                    for j, ax in enumerate(axs):
+                        ax.set_title(f'Data v. Predicted Fit for {title[j]} '
+                                    f'Component of on axis for {axis[i]} probe')
+                        ax.set_xlabel('Angular frequency (Mrad/s)')
+                        ax.set_ylabel('Linear unitless')
+                        ax.plot(self.f*1e-6, true[j], color='blue', 
+                                label='Data')
+                        ax.plot(self.f*1e-6, pred[j], color='red', 
+                                linestyle='--', label='Predicted fit')
+                        ax.grid(color='darkgray')
+                        ax.minorticks_on()
+                        ax.grid(which='minor', linestyle='--', color='lightgray')
+                        ax.legend()
+                    plot_fig.text(0.5,0.05, s=(i+2), ha='center')
+                    plt.subplots_adjust(0.15, 0.15, 0.85, 0.9, hspace=0.25)
+
+
+
+                    pdf.savefig()
+                    plt.close()
+        
+        else:
+
+            labelsize = 16
+            titlesize = 18
+            legendsize = 12
+            ticksize = 12
+
+            data_true = [[self.r_00, self.i_00],
+                        [self.r_11, self.i_11],
+                        [self.r_22, self.i_22]]
+            data_pred = [self._predict_indiv(self.f, 0,0),
+                        self._predict_indiv(self.f, 1,1),
+                        self._predict_indiv(self.f, 2,2)]
+            freq = self.f * 1e-6
+            fig = plt.figure(constrained_layout=True, figsize=(8, 8))
+            ax_re, ax_im = fig.subplots(nrows=2, ncols=1, sharex=True)
+
+            true_colors = ['r', 'g', 'b']
+            pred_colors = ['black', 'black', 'black']
+            parity = [-1, -1, 1]
+
+            for i, axis in enumerate(['x', 'y', 'z']):
+                ax_re.plot(freq / (2 * np.pi), data_true[i][0] * parity[i], label=f'{axis} data', color=true_colors[i])
+                ax_im.plot(freq / (2 * np.pi), data_true[i][1] * parity[i], label=f'{axis} data', color=true_colors[i])
+
+            for i, axis in enumerate(['x', 'y', 'z']):
+                ax_re.plot(freq / (2 * np.pi), data_pred[i][0] * parity[i], label=f'{axis} predicted', linestyle='--', color=pred_colors[i])
+                ax_im.plot(freq / (2 * np.pi), data_pred[i][1] * parity[i], label=f'{axis} predicted', linestyle='--', color=pred_colors[i])
+
+            ax_re.set_ylabel(r'Re$({V_{meas}/V_{ref}})$', fontsize=labelsize)
+            ax_im.set_ylabel(r'Im$({V_{meas}/V_{ref}})$', fontsize=labelsize)
+
+            ax_re.set_title('Data v. Predicted Fit for Real Component', fontsize=titlesize)
+            ax_im.set_title('Data v. Predicted Fit for Imaginary Component', fontsize=titlesize)
+
+            ax_re.tick_params(labelbottom=True)
+
+            for ax in [ax_im, ax_re]:
+                ax.grid(color='darkgray')
+                ax.minorticks_on()
+                ax.grid(which='minor', linestyle='--', color='lightgray')
+                ax.legend(ncol=2, fontsize=legendsize)
+
+                ax.set_xlabel('Frequency (Hz)', fontsize=labelsize)
+
+                ax.tick_params(axis='both', labelsize=ticksize)
+                # ax.set_xticks(fontsize=ticksize)
+                # ax.set_yticks(fontsize=ticksize)
+
+            # plt.show()
+            plt.savefig('probe_results.png')
+
+
 
 
     def load_params(self,
@@ -1076,4 +1131,11 @@ class ThreeAxisProbe(_Probe):
 
 
 if __name__ == '__main__':
+    probe = ThreeAxisProbe(2, 'test')
+    # probe.load_data('bdot_data/probe_2_calibration_05_26-data')
+    probe.load_data('bdot_data/probe-2-05-28-shaved-data')
+    probe.clip(10)
+    probe.calibrate(verbose=False)
+    probe.gen_probe_report(just_img=True)
+
     pass
