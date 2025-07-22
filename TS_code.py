@@ -1,240 +1,244 @@
 import h5py
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as plticker
 from scipy.optimize import curve_fit
-from scipy.signal import convolve
-from skimage.measure import block_reduce
-import os
-import datetime
-import sys
+
+
+class TSResult(object):
+
+	def __init__(self):
+		pass
+
+	# Raw and notched spectrum
+	@property
+	def spectrum_full(self):
+		return self._spectrum_full
+	
+	@spectrum_full.setter
+	def spectrum_full(self, arr: np.array):
+		self._spectrum_full = arr
+
+	@property
+	def spectrum_notched(self):
+		return self._spectrum_notched
+	
+	@spectrum_notched.setter
+	def spectrum_notched(self, arr: np.array):
+		self._spectrum_notched = arr
+
+	# Programmed and real delay
+	@property
+	def set_delay(self):
+		return self._set_delay
+
+	@set_delay.setter
+	def set_delay(self, value):
+		self._set_delay = value
+		pass
+
+	@property
+	def real_delay(self):
+		return self._real_delay
+
+	@real_delay.setter
+	def real_delay(self, value: tuple):
+		self._real_delay = value
+		pass
+
+	# Fit parameters with error from regression
+	@property
+	def fit_mean(self):
+		return self._fit_mean
+	
+	@fit_mean.setter
+	def fit_mean(self, value: tuple):
+		self._fit_mean = value
+
+	@property
+	def fit_std(self):
+		return self._fit_std
+	
+	@fit_std.setter
+	def fit_std(self, value: tuple):
+		self._fit_std = value
+
+	@property
+	def fit_amplitude(self):
+		return self._fit_amplitude
+	
+	@fit_amplitude.setter
+	def fit_amplitude(self, value: tuple):
+		self._fit_amplitude = value
+
+	# Calculate electron temp and density from fit parameters
+	@property
+	def T_e(self):
+		# Electron temperature in eV
+		return np.abs(0.903 * self._fit_std[0])
+
+	@property
+	def n_e(self):
+		# Electron density in counts per cm^3
+		return 5.6e16 * 1e-6 * self._fit_amplitude[0] * 512 / 19
+
+
+
 
 class TSAnalyzer():
 
+	NOTCH_LOW = 529.8
+	NOTCH_LOW = 531
+	NOTCH_HIGH = 534.2
+	NOTCH_HIGH = 533
 	RAYLEIGH = 1
+
 	
-	def __init__(self,
-			  file: str | h5py._hl.files.File | tuple[str, ...],
-			  position: int,
-			  voltage: int,
-			  material: str,
-			  date: str | None = None,
-			  notch: None | list[int, int] = [531, 533]
-			  ):
-		
-		# Ensure the arguments passed are right, and load the h5 files
-		if type(file) is str:
-			if not os.path.exists(file) or os.path.splitext(file)[1] != '.h5':
-				raise ValueError(f'No .h5 file exists at {file}')
-			else:
-				f = h5py.File(file)
-		elif type(file) is h5py._hl.files.File:
-			f = file
-		elif type(file) is tuple:
-			f = [h5py.File(e) for e in file]
+	def __init__(self, file: str | h5py._hl.files.File):
 
-		else:
-			raise ValueError(f'file must be str or h5py._hl.files.File, but '
-							 f'file is {type(file)}')
-		
-		# Set some instance variables 
-		self._file = f
-		self._position = position
-		self._voltage = voltage
-		self._material = material
+		self.wavelengths = (np.arange(512) * 19.80636 / 511) + 522.918
 
-		if date is None:
-			self._date = datetime.date.today().strftime("%m-%d")
+		if type(file) == 'str':
+			self._file = h5py.File(file)
 		else:
-			self._date = date
-		self._name = f'TS_{material}_loc{position}_{voltage}V-{self._date}'
+			self._file = file
 
-		# Load data from h5 files. If multiple files have been passed, they're
-		# all stacked to have the height be 100 * number of files.
-		if type(self._file) == list:
-			ts = np.vstack([file['LeCroy:Ch2:Trace'] for file in self._file])
-			heater = np.vstack([file['LeCroy:Ch1:Trace'] for file in self._file])
-			times = np.vstack([file['LeCroy:Time'] for file in self._file])[0]
-			delays = np.hstack([file['actionlist/TS:1w2wDelay'] for file in self._file])
-			images = np.vstack([[file[f'13PICAM1:Pva1:Image/image {n}'] for n in range(100)] for file in self._file], dtype=np.int16)
-		else:
-			ts = file['LeCroy:Ch2:Trace']
-			heater = file['LeCroy:Ch1:Trace']
-			times = file['LeCroy:Time']
-			delays = file['actionlist/TS:1w2wDelay']
-			images = [file[f'13PICAM1:Pva1:Image/image {n}'] for n in range(100)]
+		ts = np.array(self._file['LeCroy:Ch2:Trace'])
+		heater = np.array(self._file['LeCroy:Ch1:Trace'])
+		times = np.array(self._file['LeCroy:Time'])
+		delays = np.array(self._file['actionlist/TS:1w2wDelay'])
+		images = [np.array(self._file[f'13PICAM1:Pva1:Image/image {n}']) for n in range(100)]
 
 		unique_delays = np.unique(delays)
 
-		# Calculate the 'real' delays by comparing the maximum of the 
-		# derivative of the photodiode readout for the thomson and heater 
-		# beams and converting from index differences to nanoseconds with dt.
-		self._dt = np.average(times[1::2]-times[:-1:2])
-		real_delays = ((np.argmax(np.gradient(ts, axis=1), axis=1) 
-				 - np.argmax(np.gradient(heater, axis=1), axis=1)) 
-				 * self._dt * 1e9)
+		dt = np.round(np.average(times[:,1:] - times[:,:-1]), 10)
+		ts_max_idx = np.argmax(np.gradient(ts, axis=1), axis=1)
+		heater_max_idx = np.argmax(np.gradient(heater, axis=1), axis=1)
+		real_delays = (ts_max_idx - heater_max_idx) * dt * 1e9
 		
-		# Finds which shots the TS beam fires by seeing if there's a value
-		# above 2.
 		ts_max = np.max(ts, axis=1)
 		ts_shutter = np.array((ts_max > 2), dtype=int)
-
-		# Finds the shots the heater beam is fired by seeing if the readout
-		# is different from the previous shot. This works because the LeCroy
-		# scope gives the same data if nothing new is recorded.
 		heater_max = np.max(heater, axis=1)
 		heater_shutter = np.array([a != heater_max[i-1] for i, a in enumerate(heater_max)]).astype(int)
 
-
-		# Package the shutters and delays, and sort by the programmed delay
-		shutter_delay_arr = np.array([
-			ts_shutter,
-			heater_shutter,
-			delays,
-			real_delays
-		]).T
-		info_arr = np.array(sorted(shutter_delay_arr, 
-						key=lambda x: x[2]))
+		shutter_delay_arr = np.array([ts_shutter, heater_shutter, delays, real_delays]).T
+		info_arr = np.array(sorted(shutter_delay_arr, key=lambda x: x[2]))
 		
-		# For each delay, calculate the spectrum by finding the foreground
-		# images (TS and heater), the background images (no TS but heater),
-		# averaging and taking the difference. Also calculate the average,
-		# std of the real delays. Also records the image
-		imgs = []
-		spectra = []
-		real_delays = []
-
+		self.results = []
+		
 		for delay in unique_delays:
-			try:
-				fg_idxs = np.argwhere(np.all(info_arr[:,:3] == (1, 0, delay), axis=1))
-				bg_idxs = np.argwhere(np.all(info_arr[:,:3] == (0, 1, delay), axis=1))
-				im_fg = np.average(images[fg_idxs[0]], axis=0)
-				im_bg = np.average(images[bg_idxs[0]], axis=0)
-				im = im_fg - im_bg
-				spectrum = np.sum(im[215:375], axis=0)
 
-				real_delay = info_arr[fg_idxs, 3]
-				real_delays.append([np.average(real_delay),
-						np.std(real_delay)])
+			delay_result = TSResult()
 
-			except IndexError:
-				# TO DO
-				# Impliment a fall back procedure if the ts blip is not 
-				# recorded in LeCroy because its too far out in time
-				pass 
-				real_delays.append([delay, 0])
-			spectra.append(spectrum)
-			imgs.append(im)
+			fg_idxs = np.argwhere(np.all(info_arr[:,:3] == (1, 0, delay), axis=1)).T[0]
+			bg_idxs = np.argwhere(np.all(info_arr[:,:3] == (0, 0, delay), axis=1)).T[0]
+			fg_imgs = np.average([images[i] for i in fg_idxs], axis=0)
+			bg_imgs = np.average([images[i] for i in bg_idxs], axis=0)
 
-		# Store several useful things to the class instance
-		self.wavelengths = (np.arange(512) * 19.80636 / 511) + 522.918
-		self.spectra = np.array(spectra)
-		self.images = imgs
-		self.real_delays = real_delays
-		self.programmed_delays = unique_delays
-		self.num_shots = len(unique_delays)
+			shot_delay = info_arr[fg_idxs, 3]
 
+			spectrum_full = np.sum((fg_imgs - bg_imgs) [215:375], axis=0)
 
-		#############################################
-		#                 WARNINGS:                 #
-		#                                           #
-		# NOTCH IS NOT CORRECTED FOR BEFORE FITTING #
-		#     ASSUMES NON-COLLECTIVE SCATTERING     #
-		#                                           #
-		#############################################
+			wspan = (np.max(self.wavelengths) - np.min(self.wavelengths)) / 2
+			eval_w = np.linspace(-wspan, wspan, num=self.wavelengths.size)
+			inst_func_arr = TSAnalyzer.gauss(
+				x = eval_w,
+				mu = 0,
+				sigma = 0.3 / (2 * np.sqrt(2 * np.log(2))),
+				amplitude = 1
+			)
+			inst_func_arr /= np.sum(inst_func_arr)
 
+			spectrum_conv = np.convolve(spectrum_full, inst_func_arr, mode='same')
+			notched_spectrum = self.remove_notch(spectrum_conv)		
 
-		means = []
-		st_devs = []
-		scales = []
-		for i in range(self.num_shots):
-			popt, _ = curve_fit(self.gauss, 
-						self.wavelengths, 
-						self.spectra[i],
-						p0 = [532, 5, 1000])
-			
-			mean, st_dev, scale = popt
-			means.append(mean)
-			st_devs.append(st_dev)
-			scales.append(scale)
+			# TO DO:
+			# Impliment a more robust curve fitting routine using RANSAC
+			# Investigate the usefullness of a supergaussian fit (i.e., the power p (usually 2), is also a fitable parameter)
+			popt, pcov = curve_fit(self.gauss, self.remove_notch(self.wavelengths), notched_spectrum, p0 = [532, 5, 1000], nan_policy='omit')
+			mean, std_dev, amplitude = popt
+			mean_err, std_dev_err, amplitude_err = np.square(np.diag(pcov))
 
-		self.means = np.array(means)
-		self.st_devs = np.array(st_devs)
-		self.scales = np.array(scales)
+			delay_result.set_delay = delay
+			delay_result.real_delay = shot_delay
+			delay_result.spectrum_full = spectrum_full
+			delay_result.spectrum_notched = notched_spectrum
+			delay_result.fit_mean = (mean, mean_err)
+			delay_result.fit_std = (np.abs(std_dev), std_dev_err)
+			delay_result.fit_amplitude = (amplitude, amplitude_err)
 
-		self.density = 5.6e16 * 1e-6 * self.scales * 512 / 19
-		self.temp = np.abs(0.903 * self.st_devs)
+			self.results.append(delay_result)
 
 
+	def plot_spectra(self, title: str = None, show: bool = False, save: str = None):
 
-		# TO DO
-		# Add method to filter out extreme outliers (akin to a convolution)
-		# Add method to downsample/filter data to smooth
-
-
-
-
-
-	def plot_spectra(self):
-
-		w = self.wavelengths
-
-		nrows = self.num_shots // 3 + 1
-		fig = plt.figure(figsize=(15, 2 + nrows*3))
-		fig.suptitle(self._name)
-		axs = fig.subplots(nrows=nrows, ncols=3, sharex=True, sharey=True)
+		fig = plt.figure(constrained_layout=True, figsize=(12, 8))
+		fig.suptitle(title, fontsize=16)
+		axs = fig.subplots(2, 3, sharex=True, sharey=True)
 		for i, ax in enumerate(axs.flatten()):
-			if i >= self.num_shots:
+			if i == 5:
 				ax.set_visible(False)
-				pass
 			else:
-				spectrum = self.spectra[i]
-				fit_stats = [self.means[i], self.st_devs[i], self.scales[i]]
-				fit = TSAnalyzer.gauss(w, *fit_stats)
-				ax.plot(w, spectrum, label='data')
-				ax.plot(w, fit, color='red', label='fitted curve')
+				data = self.results[i]
 
-				w_red = block_reduce(w, block_size=2, func=np.mean, cval=np.mean(w))
-				a = block_reduce(spectrum, block_size=2, func=np.mean, cval=np.mean(spectrum))
-				b = convolve(a, [0.1, 0.2, 0.4, 0.2, 0.1], 'same')
-				ax.plot(w_red, b, color='black', label='downsampled data')
-				s = f'mean = {fit_stats[0]:.2f}{'\n'}std dev = {fit_stats[1]:.3f}{'\n'}scale = {fit_stats[2]:.1f}{'\n'}'
-				ax.text(0.05,0.95, s, fontsize='small', transform=ax.transAxes, va='top')
+				# Data plotting
+				ax.plot(self.wavelengths, data.spectrum_full, color='b', alpha=0.25)
+				ax.plot(self.wavelengths, data.spectrum_notched, color='b')
+				fit = TSAnalyzer.gauss(self.wavelengths, data.fit_mean[0], data.fit_std[0], data.fit_amplitude[0])
+				ax.plot(self.wavelengths, fit, color='r')
 
-				s = f'n_e = {self.density[i]:.2g} cm$^{{-3}}${'\n'}T_e = {self.temp[i]:.3f} eV'
-				ax.text(0.05,0.75, s, fontsize='small', transform=ax.transAxes, va='top')
-
-				ax.legend()
-
-
-		plt.show()
-		pass
-
-	def plot_shot_timing():
-		pass
+				# Fit reporting
+				s = f'$T_e = {data.T_e:.2f}$ eV {'\n'}$n_e$ = {data.n_e:.2e} cm$^{{{-3}}}$'
+				ax.text(0.05,0.95, s, transform=ax.transAxes, va='top', bbox=dict(edgecolor='k', facecolor='none'))
 
 
 
+				# Graph formatting
+				ax.set_title(f'$t_{{del}} = {data.set_delay}$ ns (actual = ${np.average(data.real_delay):.1f}±{np.std(data.real_delay):.1f}$ ns)')
+				ax.set_xlabel(r'$\lambda$ (nm)')
+				ax.set_ylabel('counts')
+				ax.tick_params(labelbottom=True)
+				ax.axhline(color='k')
+				ax.set_xlim(min(self.wavelengths), max(self.wavelengths))
+				loc = plticker.MultipleLocator(base=2)
+				ax.xaxis.set_major_locator(loc)
 
+				
+		if show:
+			plt.show()
+		if save:
+			plt.savefig(save)
+	
+
+	def remove_notch(self, arr):
+		idx_low = np.argmin(np.abs(self.wavelengths - TSAnalyzer.NOTCH_LOW))
+		idx_high = np.argmin(np.abs(self.wavelengths - TSAnalyzer.NOTCH_HIGH))
+		output_arr = np.copy(arr)
+		output_arr[idx_low:idx_high] = np.nan
+		return output_arr
 
 	@staticmethod
-	def gauss(x, mu, sigma, alpha):
-		return (alpha / np.sqrt(2 * np.pi * sigma ** 2) * 
+	def gauss(x, mu, sigma, amplitude):
+		return (amplitude / np.sqrt(2 * np.pi * sigma ** 2) * 
 		  np.exp( - np.square(x - mu) / (2 * sigma**2)))
+	
+	@staticmethod
+	def inst_func(wavelengths):
+		fwhm_factor = 2 * np.sqrt(2 * np.log(2))
+		return TSAnalyzer.gauss(wavelengths, 0, 0.3 / fwhm_factor, 1)
+
+
 
 
 
 
 if __name__ == '__main__':
-	file = (
-		'06-06/TS_Al_Location3_0V-2025-06-06.h5',
-		# '06-06/TS_Cu_Location4_0V_rerun-2025-06-06.h5',
-	)
 
-	# foo = TSAnalyzer.gauss(np.array([1,2,3]), 1, 1, 1)
-
-	data = TSAnalyzer(file, position=1, voltage=400, material='Cu')
-	data.plot_spectra()
+	file = h5py.File('06-05/TS_CH_Location1_25V-2025-06-05.h5')
+	data = TSAnalyzer(file)
+	data.plot_spectra(show=True, title='CH, 25V, Location 1')
 
 
-	# print(foo[0:15])
+
+
 
