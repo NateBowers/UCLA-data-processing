@@ -10,5 +10,6 @@ bdot_raw_trace_output/
 *.sh
 *.pdf
 *.mp4
+*.tiff
 .DS_store
 foo.py
