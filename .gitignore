@@ -11,5 +11,7 @@ bdot_raw_trace_output/
 *.pdf
 *.mp4
 *.tiff
+*.tif
+*.zip
 .DS_store
 foo.py
