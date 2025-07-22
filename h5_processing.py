@@ -49,6 +49,8 @@ class PreProcessH5():
             'energy' : np.array(f['PNGdigitizer:Ch2:Energy']),
             'pressure' : np.array(f['Vacuum:DS:PressureCC'])
         }
+        for key, val in raw_data.items():
+            raw_data[key] = np.delete(val, 46)
         return raw_data
     
     def _unique_positions(self, 
@@ -297,8 +299,9 @@ class PreProcessBdot(PreProcessH5):
         
         g = gain * 10 ** (attenuation/20)
         
-        ref = data_dict['LeCroy_photodiode']
-        times = data_dict['LeCroy_time']
+        ref = np.delete(data_dict['LeCroy_photodiode'], 45, axis=0)
+        # ref = np.delete(ref, 46, axis=0)
+        times = np.delete(data_dict['LeCroy_time'], 45, axis=0)
         tot = ref.shape[1]
         ref_diff = np.gradient(ref, axis=1)
         diff_max_idx = np.argmax(ref_diff, axis=1)
@@ -311,7 +314,8 @@ class PreProcessBdot(PreProcessH5):
         t_align = [row[l[i]: h[i]] for i, row in enumerate(t_shifted)]
         aligned_dict['LeCroy_time'] = np.array(t_align)
         for key in ('LeCroy_x', 'LeCroy_y', 'LeCroy_z', 'LeCroy_photodiode'):
-            val_align = [r[l[i]:h[i]] for i, r in enumerate(data_dict[key])]
+            data = np.delete(data_dict[key], 46, axis=0)
+            val_align = [r[l[i]:h[i]] for i, r in enumerate(data)]
             val_align_gain = np.array(val_align) * g
             aligned_dict[key] = np.array(val_align_gain)
         
@@ -482,7 +486,10 @@ class PreProcessTS(PreProcessH5):
 
 
 if __name__ == '__main__':
-    loader = PreProcessTS('06-02/TS_lineout_500V-2025-06-02.h5')
+    loader = PreProcessBdot('05-27/Probe2_50V-2025-05-27.h5')
+    for pos in loader.unique_positions:
+        print(pos[0])
+    # print(loader.unique_positions)
     images = loader.data['images']
     spectrums = loader.spectrums()
     wavelengths = loader.data['wavelengths']
