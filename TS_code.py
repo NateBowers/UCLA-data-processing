@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as plticker
 from scipy.optimize import curve_fit
+from scipy import integrate
+from itertools import product
 
 
 class TSResult(object):
@@ -16,11 +18,11 @@ class TSResult(object):
 	- `real_delay`: An array containing the actual delay for the 5 shots, 
 	calculated by comparing peaks of the photodiode readouts for the thomson 
 	and heater beam.
-	- `fit_mean`: A tuple containing the predicted mean and its error for the 
+	- `mean`: A tuple containing the predicted mean and its error for the 
 	gaussian fit.
-	- `fit_std`: A tuple containing the predicted standard deviation and its 
+	- `std`: A tuple containing the predicted standard deviation and its 
 	error for the gaussian fit.
-	- `fit_amplitude`: A tuple containing the predicted amplitude and its 
+	- `amp`: A tuple containing the predicted amplitude and its 
 	error for the gaussian fit.
 	- `T_e`: The predicted electron temperature from the fit in eV.
 	- `n_e`: The predicted electron density in cm^-3.
@@ -65,38 +67,38 @@ class TSResult(object):
 		pass
 
 	@property
-	def fit_mean(self):
-		return self._fit_mean
+	def mean(self):
+		return self._mean
 	
-	@fit_mean.setter
-	def fit_mean(self, value: tuple):
-		self._fit_mean = value
+	@mean.setter
+	def mean(self, value: tuple):
+		self._mean = value
 
 	@property
-	def fit_std(self):
-		return self._fit_std
+	def std(self):
+		return self._std
 	
-	@fit_std.setter
-	def fit_std(self, value: tuple):
-		self._fit_std = value
+	@std.setter
+	def std(self, value: tuple):
+		self._std = value
 
 	@property
-	def fit_amplitude(self):
-		return self._fit_amplitude
+	def amp(self):
+		return self._amp
 	
-	@fit_amplitude.setter
-	def fit_amplitude(self, value: tuple):
-		self._fit_amplitude = value
+	@amp.setter
+	def amp(self, value: tuple):
+		self._amp = value
 
 	@property
 	def T_e(self):
 		# Electron temperature in eV
-		return np.abs(0.903 * self._fit_std[0])
+		return np.abs(0.903 * self._std[0])
 
 	@property
 	def n_e(self):
 		# Electron density in counts per cm^3
-		return 5.6e16 * 1e-6 * self._fit_amplitude[0] * 512 / 19
+		return 5.6e16 * 1e-6 * self._amp[0] * 512 / 19
 
 
 
@@ -210,23 +212,31 @@ class TSAnalyzer():
 			# Investigate the usefullness of a supergaussian fit (i.e., 
 			# the power p (usually 2), is also a fitable parameter)
 
+			notched_wavelengths = self.remove_notch(
+				self.wavelengths,
+				notch_low,
+				notch_high
+			)
+
+			mask = ~np.isnan(notched_spectrum)
+			x = notched_wavelengths[mask]
+			y = notched_spectrum[mask]
+			sigma = np.sqrt(np.abs(y))  # Poisson noise estimate
+
+			p0 = [x[np.argmax(y)], np.std(x), np.max(y)]
 			popt, pcov = curve_fit(
-				self.gauss, 
-				self.remove_notch(self.wavelengths, notch_low, notch_high), 
-				notched_spectrum, 
-				p0 = [532, 5, 1000], 
-				nan_policy='omit'
+			    self.gauss, x, y, sigma=sigma, p0=p0, absolute_sigma=True
 			)
 			mean, std_dev, amplitude = popt
-			mean_err, std_dev_err, amplitude_err = np.square(np.diag(pcov))
+			mean_err, std_dev_err, amplitude_err = np.sqrt(np.diag(pcov))
 
 			delay_result.set_delay = delay
 			delay_result.real_delay = shot_delay
 			delay_result.spectrum_full = spectrum_full
 			delay_result.spectrum_notched = notched_spectrum
-			delay_result.fit_mean = (mean, mean_err)
-			delay_result.fit_std = (np.abs(std_dev), std_dev_err)
-			delay_result.fit_amplitude = (amplitude, amplitude_err)
+			delay_result.mean = (mean, mean_err)
+			delay_result.std = (np.abs(std_dev), std_dev_err)
+			delay_result.amp = (amplitude, amplitude_err)
 
 			self.results.append(delay_result)
 
@@ -246,7 +256,7 @@ class TSAnalyzer():
 			save (str, optional): If passed, the path to save the spectrum 
 			plots at. If none, then no plots are saved. Defaults to None.
 		"""
-
+		w = self.wavelengths
 		fig = plt.figure(constrained_layout=True, figsize=(12, 8))
 		fig.suptitle(title, fontsize=16)
 		axs = fig.subplots(2, 3, sharex=True, sharey=True)
@@ -254,30 +264,33 @@ class TSAnalyzer():
 			if i == 5:
 				ax.set_visible(False)
 			else:
-				data = self.results[i]
+				d = self.results[i]
 
 				# Data plotting
-				ax.plot(self.wavelengths, 
-						data.spectrum_full, 
-						color='b', 
-						alpha=0.25)
-				ax.plot(self.wavelengths, 
-						data.spectrum_notched, 
+				ax.plot(w, d.spectrum_full, color='b', alpha=0.25)
+				ax.plot(w, 
+						d.spectrum_notched, 
 						color='b', 
 						label=f'data convolved{'\n'}with inst. func.')
-				fit = TSAnalyzer.gauss(self.wavelengths, 
-						   				data.fit_mean[0], 
-										data.fit_std[0], 
-										data.fit_amplitude[0])
-				ax.plot(self.wavelengths, 
-						fit, 
-						color='r', 
-						label='fit gaussian')
+				fit = TSAnalyzer.gauss(w, d.mean[0], d.std[0], d.amp[0])
+				ax.plot(w, fit, color='r', label='fit gaussian')
+
+				configs = product(
+					(d.mean[0]-d.mean[1], d.mean[0]+d.mean[1]),
+					(d.std[0]-d.std[1], d.std[0]+d.std[1]),
+					(d.amp[0]-d.amp[1], d.amp[0]+d.amp[1]),
+				)
+				fit_range = np.vstack([TSAnalyzer.gauss(w, *c) for c in configs])
+				fit_low = np.min(fit_range, axis=0)
+				fit_high = np.max(fit_range, axis=0)
+
+				ax.fill_between(w, fit_low, fit_high, color='r', alpha=0.25)
+				
 				ax.legend(loc='upper right')
 
 				# Fit reporting
-				s = (f'$T_e = {data.T_e:.2f}$ eV\n'
-		 			 f'$n_e$ = {data.n_e:.2e}cm$^{{{-3}}}$')
+				s = (f'$T_e = {d.T_e:.2f}$ eV\n'
+		 			 f'$n_e$ = {d.n_e:.2e}cm$^{{{-3}}}$')
 				ax.text(
 					0.05,
 					0.95, 
@@ -289,9 +302,9 @@ class TSAnalyzer():
 
 
 				# Graph formatting
-				ax.set_title(f'$t_{{del}} = {data.set_delay}$ ns '
-				 			 f'(actual = ${np.average(data.real_delay):.1f}±'
-							 f'{np.std(data.real_delay):.1f}$ ns)')
+				ax.set_title(f'$t_{{del}} = {d.set_delay}$ ns '
+				 			 f'(actual = ${np.average(d.real_delay):.1f}±'
+							 f'{np.std(d.real_delay):.1f}$ ns)')
 				ax.set_xlabel(r'$\lambda$ (nm)')
 				ax.set_ylabel('counts')
 				ax.tick_params(labelbottom=True)
