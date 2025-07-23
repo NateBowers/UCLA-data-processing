@@ -93,12 +93,13 @@ class TSResult(object):
 	@property
 	def T_e(self):
 		# Electron temperature in eV
-		return np.abs(0.903 * self._std[0])
+		return (np.abs(0.903 * self._std[0]), np.abs(0.903 * self._std[1]))
 
 	@property
 	def n_e(self):
 		# Electron density in counts per cm^3
-		return 5.6e16 * 1e-6 * self._amp[0] * 512 / 19
+		return (5.6e16 * 1e-6 * self._amp[0] * 512 / 19, 
+		  5.6e16 * 1e-6 * self._amp[1] * 512 / 19)
 
 
 
@@ -260,6 +261,9 @@ class TSAnalyzer():
 		fig = plt.figure(constrained_layout=True, figsize=(12, 8))
 		fig.suptitle(title, fontsize=16)
 		axs = fig.subplots(2, 3, sharex=True, sharey=True)
+
+		max_h = 0
+
 		for i, ax in enumerate(axs.flatten()):
 			if i == 5:
 				ax.set_visible(False)
@@ -267,13 +271,14 @@ class TSAnalyzer():
 				d = self.results[i]
 
 				# Data plotting
-				ax.plot(w, d.spectrum_full, color='b', alpha=0.25)
-				ax.plot(w, 
+				data_raw, = ax.plot(w, d.spectrum_full, color='b', alpha=0.25)
+				data_reduced, = ax.plot(w, 
 						d.spectrum_notched, 
-						color='b', 
-						label=f'data convolved{'\n'}with inst. func.')
+						color='b')
 				fit = TSAnalyzer.gauss(w, d.mean[0], d.std[0], d.amp[0])
-				ax.plot(w, fit, color='r', label='fit gaussian')
+				if max(fit) > max_h:
+					max_h = max(fit)
+				fit_plot, = ax.plot(w, fit, color='r')
 
 				configs = product(
 					(d.mean[0]-d.mean[1], d.mean[0]+d.mean[1]),
@@ -284,13 +289,18 @@ class TSAnalyzer():
 				fit_low = np.min(fit_range, axis=0)
 				fit_high = np.max(fit_range, axis=0)
 
-				ax.fill_between(w, fit_low, fit_high, color='r', alpha=0.25)
+				fit_band = ax.fill_between(w, fit_low, fit_high, color='r', alpha=0.25)
+				dummy_band = ax.fill_between(w, 0, 0, color='b', alpha=0.25)
 				
-				ax.legend(loc='upper right')
+				ax.legend(
+					[(dummy_band, data_reduced), (fit_band, fit_plot)],
+					['Data', 'Gaussian fit'],
+					loc='lower right', 
+					ncol=2)
 
 				# Fit reporting
-				s = (f'$T_e = {d.T_e:.2f}$ eV\n'
-		 			 f'$n_e$ = {d.n_e:.2e}cm$^{{{-3}}}$')
+				s = (f'$T_e = {d.T_e[0]:.3f}±{d.T_e[1]:.3f}$ eV\n'
+		 			 f'$n_e$ = {d.n_e[0]:.3e}±{d.n_e[1]:.3e}cm$^{{{-3}}}$')
 				ax.text(
 					0.05,
 					0.95, 
@@ -298,7 +308,6 @@ class TSAnalyzer():
 					transform=ax.transAxes,
 					va='top', 
 					bbox=dict(edgecolor='k', facecolor='none'))
-
 
 
 				# Graph formatting
@@ -310,6 +319,7 @@ class TSAnalyzer():
 				ax.tick_params(labelbottom=True)
 				ax.axhline(color='k')
 				ax.set_xlim(min(self.wavelengths), max(self.wavelengths))
+				ax.set_ylim(-500, max_h*1.3)
 				loc = plticker.MultipleLocator(base=2)
 				ax.xaxis.set_major_locator(loc)
 
@@ -346,7 +356,7 @@ class TSAnalyzer():
 if __name__ == '__main__':
 
 	file = h5py.File('06-05/TS_CH_Location1_25V-2025-06-05.h5')
-	data = TSAnalyzer(file)
+	data = TSAnalyzer(file, notch_low = 530, notch_high=534)
 	data.plot_spectra(show=True, title='CH, 25V, Location 1')
 
 
