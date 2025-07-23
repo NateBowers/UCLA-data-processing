@@ -32,6 +32,53 @@ class TSResult(object):
 	def __init__(self):
 		pass
 
+	def graph_spectrum(self, ax):
+		w = self._wavelengths
+		# Data plotting
+		ax.plot(w, self._spectrum_full, color='b', alpha=0.25)
+		data_reduced, = ax.plot(w, self._spectrum_notched, color='b')
+		fit = TSAnalyzer.gauss(w, self._mean[0], self._std[0], self._amp[0])
+		fit_plot, = ax.plot(w, fit, color='r')
+
+		configs = product(
+			(self._mean[0]-self._mean[1], self._mean[0]+self._mean[1]),
+			(self._std[0]-self._std[1], self._std[0]+self._std[1]),
+			(self._amp[0]-self._amp[1], self._amp[0]+self._amp[1]),
+		)
+		fit_range = np.vstack([TSAnalyzer.gauss(w, *c) for c in configs])
+		fit_low = np.min(fit_range, axis=0)
+		fit_high = np.max(fit_range, axis=0)
+
+		fit_band = ax.fill_between(w, fit_low, fit_high, color='r', alpha=0.25)
+		dummy_band = ax.fill_between(w, 0, 0, color='b', alpha=0.25)
+		
+		ax.legend([(dummy_band, data_reduced), (fit_band, fit_plot)],['Data', 'Gaussian fit'],loc='lower right', ncol=2)
+
+		# Fit reporting
+		s = (f'$T_e = {self.T_e[0]:.3f}±{self.T_e[1]:.3f}$ eV\n$n_e$ = {self.n_e[0]:.3e}±{self.n_e[1]:.3e}cm$^{{{-3}}}$')
+		ax.text( 0.05,0.95, s, transform=ax.transAxes,va='top', bbox=dict(edgecolor='k', facecolor='none'))
+
+		# Graph formatting
+		ax.set_title(f'$t_{{del}} = {self._set_delay}$ ns(actual = ${np.average(self._real_delay):.1f}±{np.std(self._real_delay):.1f}$ ns)')
+		ax.set_xlabel(r'$\lambda$ (nm)')
+		ax.set_ylabel('counts')
+		ax.tick_params(labelbottom=True)
+		ax.axhline(color='k')
+		ax.set_xlim(min(self.wavelengths), max(self.wavelengths))
+		# ax.set_ylim(-500)
+		loc = plticker.MultipleLocator(base=2)
+		ax.xaxis.set_major_locator(loc)
+
+		return ax
+
+	@property
+	def wavelengths(self):
+		return self._wavelengths
+	
+	@wavelengths.setter
+	def wavelengths(self, arr: np.array):
+		self._wavelengths = arr
+
 	@property
 	def spectrum_full(self):
 		return self._spectrum_full
@@ -174,12 +221,10 @@ class TSAnalyzer():
 		
 		for delay in unique_delays:
 
-			delay_result = TSResult()
+			result = TSResult()
 
-			fg_idxs = np.argwhere(np.all(info_arr[:,:3] == (1, 0, delay), 
-								axis=1)).T[0]
-			bg_idxs = np.argwhere(np.all(info_arr[:,:3] == (0, 0, delay), 
-								axis=1)).T[0]
+			fg_idxs = np.argwhere(np.all(info_arr[:,:3] == (1, 0, delay), axis=1)).T[0]
+			bg_idxs = np.argwhere(np.all(info_arr[:,:3] == (0, 0, delay), axis=1)).T[0]
 			fg_imgs = np.average([images[i] for i in fg_idxs], axis=0)
 			bg_imgs = np.average([images[i] for i in bg_idxs], axis=0)
 
@@ -189,24 +234,11 @@ class TSAnalyzer():
 
 			wspan = (np.max(self.wavelengths) - np.min(self.wavelengths)) / 2
 			eval_w = np.linspace(-wspan, wspan, num=self.wavelengths.size)
-			inst_func_arr = TSAnalyzer.gauss(
-				x = eval_w,
-				mu = 0,
-				sigma = instr_func_fwhm / (2 * np.sqrt(2 * np.log(2))),
-				amplitude = 1
-			)
+			inst_func_arr = TSAnalyzer.gauss(eval_w, 0, instr_func_fwhm / (2 * np.sqrt(2 * np.log(2))), 1)
 			inst_func_arr /= np.sum(inst_func_arr)
 
-			spectrum_conv = np.convolve(
-				spectrum_full, 
-				inst_func_arr, 
-				mode='same'
-			)
-			notched_spectrum = self.remove_notch(
-				spectrum_conv, 
-				notch_low, 
-				notch_high
-			)		
+			spectrum_conv = np.convolve(spectrum_full, inst_func_arr, mode='same')
+			notched_spectrum = self.remove_notch(spectrum_conv, notch_low, notch_high)
 
 			# TO DO:
 			# Impliment a more robust curve fitting routine using RANSAC
@@ -222,24 +254,25 @@ class TSAnalyzer():
 			mask = ~np.isnan(notched_spectrum)
 			x = notched_wavelengths[mask]
 			y = notched_spectrum[mask]
-			sigma = np.sqrt(np.abs(y))  # Poisson noise estimate
+			err_poisson = np.sqrt(np.abs(y))
 
 			p0 = [x[np.argmax(y)], np.std(x), np.max(y)]
 			popt, pcov = curve_fit(
-			    self.gauss, x, y, sigma=sigma, p0=p0, absolute_sigma=True
+			    self.gauss, x, y, sigma=err_poisson, p0=p0, absolute_sigma=True
 			)
 			mean, std_dev, amplitude = popt
 			mean_err, std_dev_err, amplitude_err = np.sqrt(np.diag(pcov))
 
-			delay_result.set_delay = delay
-			delay_result.real_delay = shot_delay
-			delay_result.spectrum_full = spectrum_full
-			delay_result.spectrum_notched = notched_spectrum
-			delay_result.mean = (mean, mean_err)
-			delay_result.std = (np.abs(std_dev), std_dev_err)
-			delay_result.amp = (amplitude, amplitude_err)
+			result.wavelengths = self.wavelengths
+			result.set_delay = delay
+			result.real_delay = shot_delay
+			result.spectrum_full = spectrum_full
+			result.spectrum_notched = notched_spectrum
+			result.mean = (mean, mean_err)
+			result.std = (np.abs(std_dev), std_dev_err)
+			result.amp = (amplitude, amplitude_err)
 
-			self.results.append(delay_result)
+			self.results.append(result)
 
 
 	def plot_spectra(self,
@@ -262,68 +295,14 @@ class TSAnalyzer():
 		fig.suptitle(title, fontsize=16)
 		axs = fig.subplots(2, 3, sharex=True, sharey=True)
 
-		max_h = 0
-
+		height = max([(res.amp[0]/(res.std[0]*np.sqrt(2*np.pi)))for res in self.results])
+		
 		for i, ax in enumerate(axs.flatten()):
-			if i == 5:
-				ax.set_visible(False)
+			if i == 5: ax.set_visible(False)
 			else:
-				d = self.results[i]
-
-				# Data plotting
-				data_raw, = ax.plot(w, d.spectrum_full, color='b', alpha=0.25)
-				data_reduced, = ax.plot(w, 
-						d.spectrum_notched, 
-						color='b')
-				fit = TSAnalyzer.gauss(w, d.mean[0], d.std[0], d.amp[0])
-				if max(fit) > max_h:
-					max_h = max(fit)
-				fit_plot, = ax.plot(w, fit, color='r')
-
-				configs = product(
-					(d.mean[0]-d.mean[1], d.mean[0]+d.mean[1]),
-					(d.std[0]-d.std[1], d.std[0]+d.std[1]),
-					(d.amp[0]-d.amp[1], d.amp[0]+d.amp[1]),
-				)
-				fit_range = np.vstack([TSAnalyzer.gauss(w, *c) for c in configs])
-				fit_low = np.min(fit_range, axis=0)
-				fit_high = np.max(fit_range, axis=0)
-
-				fit_band = ax.fill_between(w, fit_low, fit_high, color='r', alpha=0.25)
-				dummy_band = ax.fill_between(w, 0, 0, color='b', alpha=0.25)
-				
-				ax.legend(
-					[(dummy_band, data_reduced), (fit_band, fit_plot)],
-					['Data', 'Gaussian fit'],
-					loc='lower right', 
-					ncol=2)
-
-				# Fit reporting
-				s = (f'$T_e = {d.T_e[0]:.3f}±{d.T_e[1]:.3f}$ eV\n'
-		 			 f'$n_e$ = {d.n_e[0]:.3e}±{d.n_e[1]:.3e}cm$^{{{-3}}}$')
-				ax.text(
-					0.05,
-					0.95, 
-					s, 
-					transform=ax.transAxes,
-					va='top', 
-					bbox=dict(edgecolor='k', facecolor='none'))
-
-
-				# Graph formatting
-				ax.set_title(f'$t_{{del}} = {d.set_delay}$ ns '
-				 			 f'(actual = ${np.average(d.real_delay):.1f}±'
-							 f'{np.std(d.real_delay):.1f}$ ns)')
-				ax.set_xlabel(r'$\lambda$ (nm)')
-				ax.set_ylabel('counts')
-				ax.tick_params(labelbottom=True)
-				ax.axhline(color='k')
-				ax.set_xlim(min(self.wavelengths), max(self.wavelengths))
-				ax.set_ylim(-500, max_h*1.3)
-				loc = plticker.MultipleLocator(base=2)
-				ax.xaxis.set_major_locator(loc)
-
-				
+				result = self.results[i]
+				result.graph_spectrum(ax)
+				ax.set_ylim(-500, height*1.3)
 		if show:
 			plt.show()
 		if save:
