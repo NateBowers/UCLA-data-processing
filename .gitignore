@@ -3,6 +3,7 @@ Jena/
 misc/
 bdot_data/
 bdot_raw_trace_output/
+archive/
 06*
 05*
 *.h5
