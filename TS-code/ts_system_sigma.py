@@ -19,7 +19,7 @@ else:
         img = np.array(Image.open(filepath))
         
         # Clip to pixels 220-380 (rows)
-        clipped = img[220:381,6:-6]
+        clipped = img[220:381,]
         
         # Average vertically to create spectrum (mean across rows)
         spectrum = np.mean(clipped, axis=0)
@@ -35,6 +35,18 @@ else:
     print(f"Number of images processed: {len(tiff_files)}")
     print(f"Mean uncertainty per pixel: {np.mean(detector_sigma):.4f}")
     print(f"Max uncertainty per pixel: {np.max(detector_sigma):.4f}")
+
+    print(f"Avg percent error: {np.mean(detector_sigma / mean_spectrum) * 100:.4f}%")
+
+    plt.axhline(0.2455, c='k', label='Average S/N (0.2469%)')
+    plt.plot((detector_sigma / mean_spectrum) * 100)
+    plt.xlabel('Pixel')
+    plt.ylabel('Signal to noise ratio (%)')
+    plt.grid(alpha=0.3)
+    plt.xlim(0, 512)
+    plt.legend()
+    plt.title('Average Signal/Noise Across 1596 Blank Shots')
+    plt.show()
     
     # Visualizations
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
