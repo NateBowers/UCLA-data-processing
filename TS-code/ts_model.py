@@ -1,5 +1,4 @@
 import numpy as np
-import plasmapy
 import matplotlib.pyplot as plt
 import numpy as np
 import lmfit
@@ -7,15 +6,11 @@ import matplotlib.pyplot as plt
 from plasmapy.diagnostics import thomson
 from astropy import units as u
 from scipy.stats import norm
-from scipy.optimize import minimize 
 from PIL import Image
-import re
-import matplotlib.gridspec as gridspec
-import matplotlib.widgets as mw
-import matplotlib.ticker as tick
 
 plt.rcParams.update({ "text.usetex": True, "font.family": "serif",})
-plt.rcParams['text.latex.preamble'] = (r'\usepackage{amsmath} \usepackage{amssymb}')
+plt.rcParams['text.latex.preamble'] = (r'\usepackage{amsmath}')
+plt.rcParams['text.latex.preamble'] = (r'\usepackage{amssymb}')
 
 
 # Physical quantities/system parameters
@@ -25,9 +20,9 @@ SCATTER_VEC = np.array([np.cos(SCATTER_ANG), np.sin(SCATTER_ANG), 0])
 PROBE_LAMBDA = 532 * u.nm
 NOTCH = [531 , 533] * u.nm
 INSTR_FWHM = 0.1775 # nm
-EV_TO_K = 11604.518 # NIST 2022 CODATA
+EV_TO_K = 11604.518 # via NIST 2022 CODATA
 K_TO_EV = 1 / EV_TO_K
-SYS_SIGMA = 1.9873 # calculated via ts_system_sigma.py
+SYS_SIGMA = 1.9873 # calculated w/ ts_system_sigma.py
 
 
 def load_data(paths):
@@ -70,14 +65,14 @@ def notch(arr: np.ndarray, wavelengths: np.ndarray) -> np.ndarray:
     arr[l_notch_idx:h_notch_idx] = np.nan
     return arr
 
-def spectral_density_wrapper(wavelengths, n, temp, scale, zero, return_alpha=False):
+def spectral_density_wrapper(wavelengths, n, temp, scale, zero):
     """Wrapper for plasmapy's thomson.spectral_density to make it into the
     proper format for the fitting routine."""
 
     T_e_K = temp * EV_TO_K * u.K
     T_i_K = T_e_K 
 
-    alpha, skw = thomson.spectral_density(
+    _, skw = thomson.spectral_density(
         wavelengths = wavelengths * u.nm,
         n = n * 1e6 * u.m ** -3,
         T_e = T_e_K,
@@ -94,11 +89,7 @@ def spectral_density_wrapper(wavelengths, n, temp, scale, zero, return_alpha=Fal
         wavelengths = wavelengths.value
 
     skw = notch(skw, wavelengths)
-    
-    if return_alpha:
-        return skw, alpha
-    else:
-        return skw
+    return skw
     
 
 def fit_model(
@@ -132,7 +123,8 @@ def fit_model(
             able to be cast to same size as spectrum.
 
     Returns:
-        lmfit.model.ModelResult: Fitted model with relevant statistical information.
+        lmfit.model.ModelResult: Fitted model with relevant statistical 
+        information. See https://lmfit.github.io/lmfit-py/model.html
     """
     
     param_names = ['n', 'temp', 'scale', 'zero']
@@ -182,16 +174,43 @@ def main(
         fg_paths: list[str] | str, 
         bg_paths: list[str] | str
     ):
-    """
+    """Main function for thomson spectrum analysis. Takes foreground
+    and background .tiff files and finds the best density and temperature
+    with a least squares method. Assumes the plasma is in thermal equilibrium
+    i.e., T_e = T_i = T. PlasmaPy is used to generate the spectral density
+    function. For details, see
+    https://docs.plasmapy.org/en/stable/ad/diagnostics/thomson.html.
 
+    Notes on the program:
+
+    To generate the raw spectrum:
+    1) The foreground and background images are averaged, subtracted
+    from each other, and clipped vertically from row 220 to 380.
+    2) Each row is then averaged to make a spectrum.
+
+    
+    When fitting the model:
+    1) Three variables are fitted: density, temperature, and scale where
+    scale is a normalization constant.
+    2) The baseline value (zero) can also be fit if the baseline
+    looks off. 
+    3) The objective function that is minimized is `obj(n,T,scale,zero) = 
+    scale(Skw(n,T) - zero) - data` where Skw(n,T) is the spectral density
+    function given by plasmapy
+    4) lmfit is used for the fitting, by default uses a least squares
+    method. Other methods can be used, for further information see 
+    https://lmfit.github.io/lmfit-py/model.html#lmfit.model.Model.fit
+
+    
     For calculating the errors, the model uses the following pipeline:
-        1) Assumes per pixel noise is the same across the detector (sigma_sys).
-        2) Finds effective sample size (n_eff) based on number of foreground
-           and background images. Calculated by 1/n_eff = 1/n_fg + 1/n_bg.
-        3) Assumes each data point is distributed as a gaussian with mean
-           given by Thomson spectrum and std given by sigma_sys / sqrt(n_eff).
-        4) Under those assumptions, `lmfit.ModelResult.uvars` and
-        `lmfit.ModelResult.dely_pred` give  
+    1) Assumes per pixel noise is the same across the detector (sigma_sys)
+    2) Finds effective sample size (n_eff) based on number of foreground
+    and background images. Calculated by 1/n_eff = 1/n_fg + 1/n_bg.
+    3) Assumes each data point is distributed as a gaussian with mean
+    given by Thomson spectrum and std given by sigma_sys / sqrt(n_eff).
+    4) Under those assumptions, `lmfit.ModelResult.uvars` and
+    `lmfit.ModelResult.dely_pred` give a parameter uncertainty and
+    the prediction interval
 
     Args:
         fg_paths (list[str] | str): Path to each foreground image
@@ -253,26 +272,55 @@ def main(
 
     # graph the raw spectrum on top
     ext = [wavelengths[0], wavelengths[-1], top, bot]
-    ax_raw.imshow(clip_raw_for_visualize(im)[bot:top], aspect='auto', extent=ext)
+    ax_raw.imshow(
+        clip_raw_for_visualize(im)[bot:top], 
+        aspect='auto', 
+        extent=ext
+    )
     ax_raw.set_title('Raw spectrum')
     ax_raw.set_yticklabels('')
    
     # graph the fit
     arr_tmp = np.linspace(-10, 10, 21)
-    mask = norm.pdf(arr_tmp, loc=0, scale = (4.5992 / (2 * np.sqrt(2 * np.log(2)))) )
+    mask = norm.pdf(arr_tmp, loc=0, scale = (4.5992/(2*np.sqrt(2*np.log(2)))))
     spectrum_smooth = np.convolve(spectrum, mask, mode='same')
     spectrum_smooth = notch(spectrum_smooth, wavelengths)
 
-    ax_fit.plot(wavelengths, (spectrum_smooth / fit_scale) + fit_zero, c='b', zorder=-7)
-    ax_fit.plot(wavelengths, (fit / fit_scale) + fit_zero, c='k', label=f'n = ${res.uvars['n']:.2eL}$ cm$^{{-3}}$\nT = ${res.uvars['temp']:.2fL}$ eV')
+    ax_fit.plot(
+        wavelengths, 
+        (spectrum_smooth / fit_scale) + fit_zero, 
+        c='b', 
+        zorder=-7
+    )
+    ax_fit.plot(
+        wavelengths, 
+        (fit / fit_scale) + fit_zero, 
+        c='k', 
+        label=f'n = ${res.uvars['n']:.2eL}$ cm$^{{-3}}$'\
+              f'\nT = ${res.uvars['temp']:.2fL}$ eV'
+    )
 
     pred_bar_top = ((fit + dely_pred) / fit_scale) + fit_zero
     pred_bar_bot = ((fit - dely_pred) / fit_scale) + fit_zero
     conf_bar_top = ((fit + dely) / fit_scale) + fit_zero
     conf_bar_bot = ((fit - dely) / fit_scale) + fit_zero
 
-    ax_fit.fill_between(wavelengths, pred_bar_bot, pred_bar_top, color='r', alpha=0.2, label='Prediction interval')
-    ax_fit.fill_between(wavelengths, conf_bar_bot, conf_bar_top, color='r', alpha=1, label='Confidence interval')
+    ax_fit.fill_between(
+        wavelengths, 
+        pred_bar_bot, 
+        pred_bar_top, 
+        color='r', 
+        alpha=0.2, 
+        label='Prediction interval'
+    )
+    ax_fit.fill_between(
+        wavelengths, 
+        conf_bar_bot, 
+        conf_bar_top, 
+        color='r', 
+        alpha=1, 
+        label='Confidence interval'
+    )
     
     ax_fit.grid(zorder=-10, c='k', linewidth=0.5)
     ax_fit.set_xticks([523, 526, 529, 532, 535, 538, 541])
