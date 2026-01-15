@@ -313,14 +313,14 @@ def main(
         alpha=0.2, 
         label='Prediction interval'
     )
-    ax_fit.fill_between(
-        wavelengths, 
-        conf_bar_bot, 
-        conf_bar_top, 
-        color='r', 
-        alpha=1, 
-        label='Confidence interval'
-    )
+    # ax_fit.fill_between(
+    #     wavelengths, 
+    #     conf_bar_bot, 
+    #     conf_bar_top, 
+    #     color='r', 
+    #     alpha=1, 
+    #     label='Confidence interval'
+    # )
     
     ax_fit.grid(zorder=-10, c='k', linewidth=0.5)
     ax_fit.set_xticks([523, 526, 529, 532, 535, 538, 541])
